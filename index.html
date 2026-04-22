@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>工地會勘紀錄</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root {
+  --cream: #f5f0e8;
+  --cream2: #ede7d9;
+  --ink: #1c1a16;
+  --ink2: #4a4640;
+  --ink3: #8a8278;
+  --red: #c0392b;
+  --green: #2e7d52;
+  --blue: #1a4a7a;
+  --gold: #b8860b;
+  --border: #c8bfaf;
+  --surface: #faf7f2;
+  --shadow: rgba(28,26,22,0.12);
+  --r: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ══ Header ══ */
+header {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: 0 2px 12px var(--shadow);
+}
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.header-badge {
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+.header-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+#headerClock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: #aaa;
+}
+
+/* ══ Tab bar ══ */
+.tabbar {
+  background: var(--ink);
+  border-top: 1px solid #2a2820;
+  display: flex;
+  position: sticky;
+  top: 52px;
+  z-index: 190;
+}
+.tab {
+  flex: 1;
+  padding: 8px 4px 7px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+.tab.active { color: var(--cream); border-bottom-color: var(--red); }
+.tab .tab-num {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: 10px;
+  margin-left: 4px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ══ Pages ══ */
+.page { display: none; flex-direction: column; flex: 1; overflow-y: auto; }
+.page.active { display: flex; }
+
+/* ══ SETUP PAGE ══ */
+#pageSetup {
+  padding: 0;
+  gap: 0;
+}
+
+.setup-section {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Noto Serif TC', serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 4px;
+}
+.section-heading .icon { font-size: 16px; }
+
+.form-row { display: flex; gap: 10px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.form-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.form-input {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-family: 'Noto Sans TC', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+.form-input:focus { border-color: var(--blue); }
+
+/* Agenda import */
+.agenda-box {
+  background: var(--surface);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--r);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agenda-box textarea {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  font-family: 'Noto Sans TC', sans-serif;
+  color: var(--ink);
+  resize: none;
+  min-height: 120px;
+  line-height: 1.8;
+  width: 100%;
+}
+.agenda-hint {
+  font-size: 11px;
+  color: var(--ink3);
+  line-height: 1.6;
+  background: var(--cream2);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.agenda-hint strong { color: var(--blue); }
+.agenda-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agenda-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 8px;
+  background: var(--cream);
+  border-radius: 4px;
+  border-left: 3px solid var(--blue);
+}
+.agenda-preview-item .num { font-weight: 700; color: var(--blue); font-size: 11px; min-width: 16px; }
+
+.btn-parse {
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-parse:active { opacity: 0.85; }
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.btn-start {
+  margin: 0 16px 20px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'Noto Serif TC', serif;
+  cursor: pointer;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 16px rgba(192,57,43,0.3);
+  transition: all 0.15s;
+}
+.btn-start:active { transform: scale(0.97); }
+
+/* ══ AGENDA PAGE ══ */
+#pageAgenda {
+  padding: 12px 14px 80px;
+  gap: 10px;
+}
+
+.agenda-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+.agenda-card.done { border-color: var(--green); }
+.agenda-card.done .agenda-card-header { background: #f0faf4; }
+
+.agenda-card-header {
+  padding: 11px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--cream2);
+  border-bottom: 1px solid var(--border);
+}
+.agenda-card-num {
+  min-width: 28px; height: 28px;
+  background: var(--blue);
+  color: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.agenda-card.done .agenda-card-num { background: var(--green); }
+.agenda-card-topic { font-size: 14px; font-weight: 600; line-height: 1.5; flex: 1; }
+.agenda-card-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.status-pending { background: #fff3e0; color: #c67c00; }
+.status-done { background: #e8f5e9; color: var(--green); }
+
+.agenda-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.conclusion-area {
+  background: var(--cream);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: 'Noto Sans TC', sans-serif;
+  color: var(--ink);
+  resize: none;
+  outline: none;
+  min-height: 80px;
+  line-height: 1.6;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+.conclusion-area:focus { border-color: var(--blue); background: #fff; }
+
+/* Photo row */
+.photo-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.photo-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  background: var(--cream);
+  color: var(--ink2);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.photo-btn:active { background: var(--cream2); }
+.photo-thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+.photo-thumb-wrap {
+  position: relative;
+  display: inline-block;
+}
+.photo-thumb {
+  width: 60px; height: 60px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  display: block;
+}
+.photo-del {
+  position: absolute;
+  top: -5px; right: -5px;
+  width: 18px; height: 18px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+
+/* card actions */
+.card-actions { display: flex; gap: 8px; }
+.btn-card-done {
+  flex: 1;
+  background: var(--green);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-card-done:active { opacity: 0.85; }
+.btn-card-del {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.btn-card-del:hover { opacity: 1; }
+.btn-card-undo {
+  background: var(--cream2);
+  color: var(--ink2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Add extra item */
+.btn-add-extra {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink3);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s;
+}
+.btn-add-extra:hover { border-color: var(--blue); color: var(--blue); }
+
+/* floating finish */
+.float-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--ink);
+  border-top: 1px solid #333;
+  padding: 10px 14px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  z-index: 180;
+}
+.float-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.float-progress-label { font-size: 11px; color: #888; font-weight: 600; }
+.float-progress-bar {
+  height: 5px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.float-progress-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.btn-float-finish {
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(192,57,43,0.4);
+  transition: all 0.15s;
+}
+.btn-float-finish:active { transform: scale(0.96); }
+
+/* ══ REPORT PAGE ══ */
+#pageReport { padding: 0; }
+
+.report-toolbar {
+  background: var(--ink);
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #333;
+}
+.btn-rtool {
+  padding: 8px 14px;
+  border-radius: var(--r);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s;
+  border: none;
+}
+.btn-rtool.primary { background: var(--red); color: #fff; }
+.btn-rtool.secondary { background: #2a2820; color: #ccc; border: 1px solid #444; }
+.btn-rtool:active { opacity: 0.8; }
+
+.report-scroll { flex: 1; overflow-y: auto; padding: 14px; }
+
+/* ── Report Document ── */
+.rdoc {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  font-family: 'Noto Sans TC', sans-serif;
+  color: #1c1a16;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.rdoc-cover {
+  background: var(--ink);
+  color: #f5f0e8;
+  padding: 28px 28px 24px;
+  border-bottom: 4px solid var(--red);
+}
+.rdoc-cover-badge {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  margin-bottom: 10px;
+}
+.rdoc-cover-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+.rdoc-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 24px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.rdoc-meta-grid dt { color: #aaa; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 1px; }
+.rdoc-meta-grid dd { font-weight: 600; color: #f5f0e8; }
+
+.rdoc-body { padding: 0; }
+
+.rdoc-item {
+  border-bottom: 1px solid #e8e2d8;
+  padding: 18px 24px;
+}
+.rdoc-item:last-child { border-bottom: none; }
+.rdoc-item-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.rdoc-item-num {
+  width: 30px; height: 30px;
+  background: #1c1a16;
+  color: #f5f0e8;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900;
+  flex-shrink: 0;
+}
+.rdoc-item-topic {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  padding-top: 4px;
+}
+.rdoc-item-extra { font-size: 10px; letter-spacing: 1px; color: #999; margin-top: 2px; }
+.rdoc-status-badge {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-done { background: #e8f5e9; color: #2e7d52; }
+.badge-pending { background: #fff3e0; color: #c67c00; }
+.badge-extra { background: #e8eaf6; color: #3f51b5; }
+
+.rdoc-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rdoc-section-label::after { content:''; flex: 1; height: 1px; background: #e8e2d8; }
+
+.rdoc-conclusion-box {
+  background: #f8f6f0;
+  border-left: 3px solid #1c1a16;
+  border-radius: 0 6px 6px 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #1c1a16;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+}
+.rdoc-conclusion-box.empty { color: #bbb; font-style: italic; }
+
+.rdoc-photos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.rdoc-photo {
+  width: 110px; height: 85px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  cursor: pointer;
+}
+
+.rdoc-footer {
+  background: #f8f6f0;
+  border-top: 2px solid #ddd;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.rdoc-sig {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.rdoc-sig-line { width: 110px; border-top: 1.5px solid #1c1a16; padding-top: 6px; font-size: 11px; color: #555; }
+.rdoc-footer-note { font-size: 11px; color: #999; }
+
+/* ══ Modals ══ */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.88);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.overlay.open { display: flex; }
+.overlay img { max-width: 100%; max-height: 85vh; border-radius: 8px; object-fit: contain; }
+
+/* Add item modal */
+.modal-box {
+  background: var(--surface);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 480px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 16px;
+  font-weight: 700;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 10px;
+}
+.modal-actions { display: flex; gap: 8px; }
+.btn-modal-ok {
+  flex: 1;
+  background: var(--blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-modal-cancel {
+  background: var(--cream2);
+  color: var(--ink2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--ink);
+  border: 1px solid #444;
+  border-radius: 24px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cream);
+  z-index: 600;
+  opacity: 0;
+  transition: all 0.3s;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+input[type="file"] { display: none; }
+
+@media print {
+  .tabbar, .report-toolbar, .float-bar, .overlay, .toast { display: none !important; }
+  #pageSetup, #pageAgenda { display: none !important; }
+  #pageReport { display: block !important; }
+  .report-scroll { overflow: visible !important; }
+  body { background: white !important; }
+}
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-brand">
+    <div class="header-badge">會勘</div>
+    <div class="header-title">工地巡視紀錄</div>
+  </div>
+  <div id="headerClock"></div>
+</header>
+
+<div class="tabbar">
+  <div class="tab active" id="tab-setup" onclick="switchTab('setup')">① 設定 / 匯入</div>
+  <div class="tab" id="tab-agenda" onclick="switchTab('agenda')">② 現場紀錄 <span class="tab-num" id="doneCount">0</span></div>
+  <div class="tab" id="tab-report" onclick="switchTab('report')">③ 產出報表</div>
+</div>
+
+<!-- ══ PAGE: SETUP ══ -->
+<div class="page active" id="pageSetup">
+  <div class="setup-section">
+    <div class="section-heading"><span class="icon">📋</span>基本資訊</div>
+    <div class="form-row">
+      <div class="form-group">
+        <div class="form-label">巡視單位 / 工地</div>
+        <input class="form-input" id="iUnit" type="text" placeholder="例：北區工地 A 標" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <div class="form-label">主持長官</div>
+        <input class="form-input" id="iOfficer" type="text" placeholder="職稱 姓名" />
+      </div>
+      <div class="form-group">
+        <div class="form-label">陪同人員</div>
+        <input class="form-input" id="iEscort" type="text" placeholder="（選填）" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <div class="form-label">會勘日期</div>
+        <input class="form-input" id="iDate" type="date" />
+      </div>
+      <div class="form-group">
+        <div class="form-label">主辦單位</div>
+        <input class="form-input" id="iOrg" type="text" placeholder="（選填）" />
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="setup-section">
+    <div class="section-heading"><span class="icon">📝</span>預定討論事項</div>
+    <div class="agenda-box">
+      <div class="agenda-hint">
+        <strong>貼上或輸入討論清單</strong>，每行一項。<br>
+        支援格式：<br>
+        <strong>1. 事項內容</strong>（有編號）<br>
+        <strong>事項內容</strong>（無編號直接貼）
+      </div>
+      <textarea id="agendaInput" placeholder="例：&#10;1. 主體結構鋼筋綁紮進度確認&#10;2. B2 地下室防水施工現況&#10;3. 施工動線安全措施&#10;4. 廠商進場時間協調&#10;…"></textarea>
+      <div id="agendaPreview" class="agenda-preview"></div>
+      <button class="btn-parse" onclick="parseAgenda()">✔ 解析並預覽（共 <span id="parseCount">0</span> 項）</button>
+    </div>
+  </div>
+
+  <button class="btn-start" onclick="startSession()">▶ 進入現場紀錄</button>
+</div>
+
+<!-- ══ PAGE: AGENDA ══ -->
+<div class="page" id="pageAgenda">
+  <div id="agendaCards" style="padding:12px 14px 90px;display:flex;flex-direction:column;gap:10px;"></div>
+</div>
+
+<!-- Float bar -->
+<div class="float-bar" id="floatBar" style="display:none;">
+  <div class="float-progress">
+    <div class="float-progress-label" id="floatLabel">0 / 0 項完成</div>
+    <div class="float-progress-bar">
+      <div class="float-progress-fill" id="floatFill" style="width:0%"></div>
+    </div>
+  </div>
+  <button class="btn-float-finish" onclick="goReport()">產出報表 →</button>
+</div>
+
+<!-- ══ PAGE: REPORT ══ -->
+<div class="page" id="pageReport">
+  <div class="report-toolbar">
+    <button class="btn-rtool secondary" onclick="switchTab('agenda')">← 返回補充</button>
+    <button class="btn-rtool primary" id="btnPdf" onclick="exportPDF()">⬇ 下載 PDF</button>
+    <button class="btn-rtool secondary" onclick="copyReportText()">📋 複製文字</button>
+    <button class="btn-rtool secondary" onclick="printPage()">🖨 列印存PDF</button>
+    <button class="btn-rtool secondary" id="btnWord" onclick="exportWord()">📝 匯出 Word</button>
+  </div>
+  <div class="report-scroll">
+    <div id="reportDoc"></div>
+  </div>
+</div>
+
+<!-- Image modal -->
+<div class="overlay" id="imgOverlay" onclick="this.classList.remove('open')">
+  <img id="overlayImg" src="" />
+</div>
+
+<!-- Add item modal -->
+<div class="overlay" id="addModal">
+  <div class="modal-box">
+    <div class="modal-title">＋ 新增臨時討論事項</div>
+    <div class="form-group">
+      <div class="form-label">事項說明</div>
+      <textarea class="form-input conclusion-area" id="newItemText" placeholder="輸入現場新增的討論事項…" style="min-height:80px;"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeAddModal()">取消</button>
+      <button class="btn-modal-ok" onclick="confirmAddItem()">新增</button>
+    </div>
+  </div>
+</div>
+
+
+    <a id="pdfDownloadLink" download="" style="background:#c0392b;color:#fff;font-weight:700;font-size:13px;padding:8px 14px;border-radius:8px;text-decoration:none;">⬇ 下載</a>
+    <button onclick="document.getElementById('pdfModal').classList.remove('open')" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;padding:0 4px;">✕</button>
+  </div>
+  <div style="font-size:11px;color:#aaa;background:#2a2820;padding:6px 16px;text-align:center;flex-shrink:0;">
+    iPhone 用戶：點「⬇ 下載」→ 長按 → 「儲存到檔案」或「分享」
+  </div>
+  <iframe id="pdfFrame" style="flex:1;border:none;background:#fff;"></iframe>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ══ State ══
+let session = {
+  unit: '', officer: '', escort: '', date: '', org: '',
+  startTime: null, endTime: null,
+  items: []   // { id, topic, isExtra, conclusion, photos:[], done }
+};
+
+let itemPhotoInputs = {};
+const AGENDA_SAVE_KEY = 'agenda_autosave_v1';
+
+// ══ localStorage helpers ══
+function saveSession() {
+  try {
+    const data = JSON.stringify({
+      ...session,
+      startTime: session.startTime ? session.startTime.toISOString() : null,
+      endTime: session.endTime ? session.endTime.toISOString() : null,
+    });
+    localStorage.setItem(AGENDA_SAVE_KEY, data);
+  } catch(e) { /* storage full, skip */ }
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(AGENDA_SAVE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d.unit) return null;
+    d.startTime = d.startTime ? new Date(d.startTime) : null;
+    d.endTime = d.endTime ? new Date(d.endTime) : null;
+    return d;
+  } catch(e) { return null; }
+}
+
+function clearSession() { localStorage.removeItem(AGENDA_SAVE_KEY); }
+
+// ══ Clock ══
+setInterval(() => {
+  const n = new Date();
+  document.getElementById('headerClock').textContent =
+    `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+}, 1000);
+function pad(n){ return String(n).padStart(2,'0'); }
+
+// ══ Tab ══
+function switchTab(t) {
+  ['setup','agenda','report'].forEach(id => {
+    document.getElementById('page'+cap(id)).classList.toggle('active', id===t);
+    document.getElementById('tab-'+id).classList.toggle('active', id===t);
+  });
+  document.getElementById('floatBar').style.display = t==='agenda' ? 'flex' : 'none';
+}
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// ══ Parse agenda ══
+function parseAgenda() {
+  const raw = document.getElementById('agendaInput').value.trim();
+  if (!raw) { showToast('請輸入討論事項'); return; }
+  const lines = raw.split('\n')
+    .map(l => l.replace(/^[\d一二三四五六七八九十]+[.、．\)）\s]+/, '').trim())
+    .filter(l => l.length > 0);
+  document.getElementById('parseCount').textContent = lines.length;
+  const preview = document.getElementById('agendaPreview');
+  preview.innerHTML = lines.map((l,i) => `
+    <div class="agenda-preview-item">
+      <span class="num">${i+1}</span>
+      <span>${escHtml(l)}</span>
+    </div>`).join('');
+  showToast(`✅ 解析完成，共 ${lines.length} 項`);
+  // Store parsed
+  preview._lines = lines;
+}
+
+// ══ Start ══
+function startSession() {
+  const unit = document.getElementById('iUnit').value.trim();
+  const officer = document.getElementById('iOfficer').value.trim();
+  if (!unit || !officer) { showToast('請填寫巡視單位及長官'); return; }
+
+  const preview = document.getElementById('agendaPreview');
+  const lines = (preview._lines || []);
+
+  session = {
+    unit, officer,
+    escort: document.getElementById('iEscort').value.trim(),
+    date: document.getElementById('iDate').value || fmtDate(new Date()),
+    org: document.getElementById('iOrg').value.trim(),
+    startTime: new Date(),
+    endTime: null,
+    items: lines.map((t,i) => ({
+      id: i+1, topic: t, isExtra: false,
+      conclusion: '', photos: [], done: false
+    }))
+  };
+
+  if (session.items.length === 0) {
+    // Allow empty agenda - start with blank
+    session.items = [];
+  }
+
+  renderAgenda();
+  updateProgress();
+  document.getElementById('doneCount').textContent = session.items.length;
+  saveSession();
+  switchTab('agenda');
+}
+
+// ══ Render Agenda ══
+function renderAgenda() {
+  const container = document.getElementById('agendaCards');
+  container.innerHTML = '';
+  itemPhotoInputs = {};
+  session.items.forEach(item => appendCard(item, container));
+  // Add extra button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn-add-extra';
+  addBtn.id = 'btnAddExtra';
+  addBtn.innerHTML = '＋ 新增現場臨時事項';
+  addBtn.onclick = openAddModal;
+  container.appendChild(addBtn);
+}
+
+function appendCard(item, container) {
+  const card = document.createElement('div');
+  card.className = 'agenda-card' + (item.done ? ' done' : '');
+  card.id = `card-${item.id}`;
+
+  const statusLabel = item.done ? '已完成' : '待紀錄';
+  const statusClass = item.done ? 'status-done' : 'status-pending';
+  const extraBadge = item.isExtra ? ' <span style="font-size:10px;color:#888;">（臨時新增）</span>' : '';
+
+  card.innerHTML = `
+    <div class="agenda-card-header">
+      <div class="agenda-card-num">${item.id}</div>
+      <div class="agenda-card-topic">${escHtml(item.topic)}${extraBadge}</div>
+      <div class="agenda-card-status ${statusClass}">${statusLabel}</div>
+      <button class="btn-card-del" onclick="deleteItem(${item.id})" title="刪除此項">🗑</button>
+    </div>
+    <div class="agenda-card-body">
+      <div>
+        <div class="field-label">現場結論 / 指示事項</div>
+        <textarea class="conclusion-area" id="conc-${item.id}" placeholder="輸入現場結論、指示或備注…">${escHtml(item.conclusion)}</textarea>
+      </div>
+      <div>
+        <div class="field-label">現場照片</div>
+        <div class="photo-row">
+          <label class="photo-btn">
+            📷 拍照
+            <input type="file" id="cam-${item.id}" accept="image/*" capture="environment" onchange="handlePhotoInput(event, ${item.id})">
+          </label>
+          <label class="photo-btn">
+            🖼 相簿
+            <input type="file" id="gal-${item.id}" accept="image/*" onchange="handlePhotoInput(event, ${item.id})">
+          </label>
+        </div>
+        <div class="photo-thumbs" id="thumbs-${item.id}"></div>
+      </div>
+      <div class="card-actions">
+        ${item.done
+          ? `<button class="btn-card-undo" onclick="undoneItem(${item.id})">↺ 重新開啟</button>`
+          : `<button class="btn-card-done" onclick="doneItem(${item.id})">✔ 完成此項</button>`
+        }
+      </div>
+    </div>
+  `;
+  // Insert before add button
+  const addBtn = document.getElementById('btnAddExtra');
+  if (addBtn) container.insertBefore(card, addBtn);
+  else container.appendChild(card);
+
+  // Restore photos
+  item.photos.forEach((src, pi) => addThumb(item.id, src, pi));
+
+  // Bind textarea autosave
+  document.getElementById(`conc-${item.id}`).addEventListener('input', e => {
+    item.conclusion = e.target.value;
+    saveSession();
+  });
+}
+
+// ══ Photo ══
+function handlePhotoInput(e, itemId) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const item = session.items.find(i => i.id === itemId);
+    if (!item) return;
+    item.photos.push(ev.target.result);
+    addThumb(itemId, ev.target.result, item.photos.length - 1);
+    e.target.value = '';
+    saveSession();
+  };
+  reader.readAsDataURL(file);
+}
+
+function addThumb(itemId, src, photoIdx) {
+  const container = document.getElementById(`thumbs-${itemId}`);
+  if (!container) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'photo-thumb-wrap';
+  wrap.id = `thumb-${itemId}-${photoIdx}`;
+  wrap.innerHTML = `
+    <img class="photo-thumb" src="${src}" onclick="openImg('${itemId}','${photoIdx}')" />
+    <button class="photo-del" onclick="delPhoto(${itemId},${photoIdx})">✕</button>
+  `;
+  container.appendChild(wrap);
+}
+
+function delPhoto(itemId, photoIdx) {
+  if (!confirm('確定要刪除這張照片？')) return;
+  const item = session.items.find(i => i.id === itemId);
+  if (!item) return;
+  item.photos.splice(photoIdx, 1);
+  const container = document.getElementById(`thumbs-${itemId}`);
+  container.innerHTML = '';
+  item.photos.forEach((src, pi) => addThumb(itemId, src, pi));
+  saveSession();
+}
+
+function openImg(itemId, photoIdx) {
+  const item = session.items.find(i => i.id == itemId);
+  if (!item) return;
+  document.getElementById('overlayImg').src = item.photos[photoIdx];
+  document.getElementById('imgOverlay').classList.add('open');
+}
+
+// ══ Done / Undo ══
+function doneItem(id) {
+  const item = session.items.find(i => i.id === id);
+  if (!item) return;
+  item.conclusion = document.getElementById(`conc-${id}`)?.value || item.conclusion;
+  item.done = true;
+  refreshCard(item);
+  updateProgress();
+  saveSession();
+}
+function undoneItem(id) {
+  const item = session.items.find(i => i.id === id);
+  if (!item) return;
+  item.done = false;
+  refreshCard(item);
+  updateProgress();
+  saveSession();
+}
+function refreshCard(item) {
+  const old = document.getElementById(`card-${item.id}`);
+  if (!old) return;
+  const container = document.getElementById('agendaCards');
+  const next = old.nextSibling;
+  old.remove();
+  // Re-append at same position
+  const tmp = document.createElement('div');
+  container.insertBefore(tmp, next);
+  appendCard(item, container);
+  tmp.remove();
+}
+
+// ══ Delete item ══
+function deleteItem(id) {
+  const item = session.items.find(i => i.id === id);
+  if (!item) return;
+  const label = item.topic.length > 20 ? item.topic.slice(0,20)+'…' : item.topic;
+  if (!confirm(`確定要刪除事項：\n「${label}」？\n\n此項將不會出現在報表中。`)) return;
+  session.items = session.items.filter(i => i.id !== id);
+  document.getElementById(`card-${id}`)?.remove();
+  updateProgress();
+  saveSession();
+  showToast('已刪除，可新增臨時事項補充');
+}
+
+// ══ Progress ══
+function updateProgress() {
+  const total = session.items.length;
+  const done = session.items.filter(i => i.done).length;
+  document.getElementById('floatLabel').textContent = `${done} / ${total} 項完成`;
+  document.getElementById('floatFill').style.width = total ? `${(done/total*100).toFixed(0)}%` : '0%';
+  document.getElementById('doneCount').textContent = total;
+}
+
+// ══ Add extra item ══
+function openAddModal() { document.getElementById('addModal').classList.add('open'); }
+function closeAddModal() {
+  document.getElementById('addModal').classList.remove('open');
+  document.getElementById('newItemText').value = '';
+}
+function confirmAddItem() {
+  const text = document.getElementById('newItemText').value.trim();
+  if (!text) { showToast('請輸入事項說明'); return; }
+  const newId = session.items.length > 0 ? Math.max(...session.items.map(i=>i.id)) + 1 : 1;
+  const item = { id: newId, topic: text, isExtra: true, conclusion: '', photos: [], done: false };
+  session.items.push(item);
+  const container = document.getElementById('agendaCards');
+  appendCard(item, container);
+  updateProgress();
+  saveSession();
+  closeAddModal();
+  setTimeout(() => document.getElementById(`card-${newId}`)?.scrollIntoView({behavior:'smooth', block:'center'}), 100);
+}
+
+// ══ Go Report ══
+function goReport() {
+  session.endTime = new Date();
+  // Flush all textarea values
+  session.items.forEach(item => {
+    const el = document.getElementById(`conc-${item.id}`);
+    if (el) item.conclusion = el.value;
+  });
+  generateReport();
+  switchTab('report');
+}
+
+// ══ Generate Report ══
+function generateReport() {
+  const start = fmtDateTime(session.startTime);
+  const end = fmtDateTime(session.endTime || new Date());
+  const dur = getDuration(session.startTime, session.endTime || new Date());
+  const doneCount = session.items.filter(i=>i.done).length;
+
+  const itemsHtml = session.items.map((item, i) => {
+    const statusClass = item.isExtra ? 'badge-extra' : (item.done ? 'badge-done' : 'badge-pending');
+    const statusLabel = item.isExtra ? '現場新增' : (item.done ? '已確認' : '未結案');
+    const photosHtml = item.photos.length
+      ? `<div class="rdoc-photos">${item.photos.map((src,pi)=>`<img class="rdoc-photo" src="${src}" onclick="openImgSrc('${src}')" />`).join('')}</div>`
+      : '';
+    return `
+      <div class="rdoc-item">
+        <div class="rdoc-item-header">
+          <div class="rdoc-item-num">${i+1}</div>
+          <div style="flex:1;">
+            <div class="rdoc-item-topic">${escHtml(item.topic)}</div>
+            ${item.isExtra ? '<div class="rdoc-item-extra">▸ 現場臨時新增</div>' : ''}
+          </div>
+          <div class="rdoc-status-badge ${statusClass}">${statusLabel}</div>
+        </div>
+        <div class="rdoc-section-label">結論 / 指示事項</div>
+        <div class="rdoc-conclusion-box ${item.conclusion ? '' : 'empty'}">${item.conclusion ? escHtml(item.conclusion) : '（未填寫）'}</div>
+        ${item.photos.length ? `<div class="rdoc-section-label">現場照片（${item.photos.length} 張）</div>${photosHtml}` : ''}
+      </div>`;
+  }).join('');
+
+  document.getElementById('reportDoc').innerHTML = `
+    <div class="rdoc" id="printArea">
+      <div class="rdoc-cover">
+        <div class="rdoc-cover-badge">SITE INSPECTION RECORD</div>
+        <div class="rdoc-cover-title">工地巡視會勘紀錄表</div>
+        <dl class="rdoc-meta-grid">
+          <dt>巡視單位</dt><dd>${escHtml(session.unit)}</dd>
+          <dt>主持長官</dt><dd>${escHtml(session.officer)}</dd>
+          ${session.escort ? `<dt>陪同人員</dt><dd>${escHtml(session.escort)}</dd>` : ''}
+          ${session.org ? `<dt>主辦單位</dt><dd>${escHtml(session.org)}</dd>` : ''}
+          <dt>會勘日期</dt><dd>${escHtml(session.date)}</dd>
+          <dt>開始時間</dt><dd>${start}</dd>
+          <dt>結束時間</dt><dd>${end}</dd>
+          <dt>共歷時</dt><dd>${dur}</dd>
+          <dt>討論事項</dt><dd>共 ${session.items.length} 項（${doneCount} 項已確認）</dd>
+        </dl>
+      </div>
+      <div class="rdoc-body">${itemsHtml}</div>
+      <div class="rdoc-footer">
+        <div class="rdoc-footer-note">製表時間：${end}</div>
+        <div style="display:flex;gap:24px;">
+          <div class="rdoc-sig"><div class="rdoc-sig-line">主持長官簽名</div></div>
+          <div class="rdoc-sig"><div class="rdoc-sig-line">紀錄人員簽名</div></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openImgSrc(src) {
+  document.getElementById('overlayImg').src = src;
+  document.getElementById('imgOverlay').classList.add('open');
+}
+
+// ══ Print Page (iOS: Share → Print → pinch to PDF) ══
+function printPage() {
+  showToast('iPhone：列印畫面中，用兩指捏合放大即可存PDF');
+  setTimeout(() => window.print(), 400);
+}
+
+// ══ Export PDF ══
+async function exportPDF() {
+  const btn = document.getElementById('btnPdf');
+  btn.textContent = '⏳ 產生中…';
+  btn.disabled = true;
+  try {
+    const { jsPDF } = window.jspdf;
+    const el = document.getElementById('printArea');
+    const origW = el.style.width;
+    el.style.width = '860px';
+
+    const canvas = await html2canvas(el, {
+      scale: 2, useCORS: true, allowTaint: true,
+      backgroundColor: '#ffffff', logging: false
+    });
+    el.style.width = origW;
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const cw = pw - margin*2;
+    const imgH = cw * canvas.height / canvas.width;
+    const pageH = ph - margin*2;
+    let srcY = 0, remaining = imgH;
+
+    while (remaining > 0) {
+      const sliceH = Math.min(remaining, pageH);
+      const sc = document.createElement('canvas');
+      sc.width = canvas.width;
+      sc.height = Math.round(sliceH * canvas.height / imgH);
+      sc.getContext('2d').drawImage(canvas, 0, Math.round(srcY * canvas.height / imgH), canvas.width, sc.height, 0, 0, canvas.width, sc.height);
+      pdf.addImage(sc.toDataURL('image/jpeg',0.92), 'JPEG', margin, margin, cw, sliceH);
+      remaining -= sliceH; srcY += sliceH;
+      if (remaining > 0) pdf.addPage();
+    }
+
+    // Safari/iOS: open in new tab then user uses Share → Save to Files
+    const pdfBlob = pdf.output('blob');
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const newTab = window.open(blobUrl, '_blank');
+    if (!newTab) {
+      // Fallback: trigger print dialog which iOS can save as PDF
+      showToast('請用分享鍵「□↑」→「列印」→ 捏合放大 → 存PDF');
+      setTimeout(() => window.print(), 300);
+    } else {
+      showToast('✅ 已開啟新頁面，點「□↑」分享鍵 → 儲存到檔案');
+    }
+  } catch(e) {
+    console.error(e);
+    showToast('❌ 產生失敗，請截圖保存');
+  }
+  btn.textContent = '⬇ 下載 PDF';
+  btn.disabled = false;
+}
+
+// ══ Export Word (.docx) — pure JS, no CDN ══
+// Minimal OOXML/docx builder
+function buildDocx(items, session) {
+  const endTime = session.endTime || new Date();
+  const doneN = items.filter(i=>i.done).length;
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const statusText = item => item.isExtra ? '現場新增' : (item.done ? '已確認' : '未結案');
+
+  // Build table rows for each item
+  let itemRows = '';
+  items.forEach((item, i) => {
+    const concl = item.conclusion || '（未填寫）';
+    const photoNote = item.photos.length ? `共 ${item.photos.length} 張（請參閱原始紀錄）` : '';
+    itemRows += `
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="E8EAED"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>${i+1}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="6026" w:type="dxa"/><w:shd w:val="clear" w:fill="E8EAED"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(item.topic)}${item.isExtra?' ★臨時新增':''}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/><w:shd w:val="clear" w:fill="${item.done?'D4EDDA':(item.isExtra?'D1D5F0':'FFF3CD')}"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="18"/></w:rPr><w:t>${esc(statusText(item))}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="F8F8F8"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>結論</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/>${!item.conclusion?'<w:color w:val="AAAAAA"/>':''}</w:rPr><w:t xml:space="preserve">${esc(concl)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    ${photoNote ? `<w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="F8F8F8"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>照片</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>${esc(photoNote)}</w:t></w:r></w:p></w:tc>
+    </w:tr>` : ''}`;
+  });
+
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<w:body>
+  <!-- Title -->
+  <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="120"/></w:pPr>
+    <w:r><w:rPr><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr><w:t>工地巡視會勘紀錄表</w:t></w:r></w:p>
+  <!-- Meta table -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2163"/><w:gridCol w:w="2000"/><w:gridCol w:w="2163"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>巡視單位</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.unit)}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>主持長官</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.officer)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>陪同人員</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.escort||'—')}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>會勘日期</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.date)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>主辦單位</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.org||'—')}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>討論事項</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${items.length} 項（${doneN} 已確認）</w:t></w:r></w:p></w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="160" w:after="0"/></w:pPr></w:p>
+  <!-- Items table -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="6026"/><w:gridCol w:w="1800"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>#</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="6026" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>討論事項</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>狀態</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    ${itemRows}
+  </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="240" w:after="0"/></w:pPr></w:p>
+  <!-- Signature line -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="3326"/><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="3326" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="888888"/></w:rPr><w:t>製表：${esc(fmtDateTime(endTime))}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2500" w:type="dxa"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="480"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>主持長官簽名</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2500" w:type="dxa"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="480"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>紀錄人員簽名</w:t></w:r></w:p></w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:sectPr>
+    <w:pgSz w:w="11906" w:h="16838"/>
+    <w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>
+  </w:sectPr>
+</w:body></w:document>`;
+
+  return docXml;
+}
+
+// Base64 encode for zip
+function strToUint8(str) {
+  return new TextEncoder().encode(str);
+}
+
+async function exportWord() {
+  const btn = document.getElementById('btnWord');
+  btn.textContent = '⏳ 產生中…';
+  btn.disabled = true;
+  try {
+    // Flush conclusions
+    session.items.forEach(item => {
+      const el = document.getElementById(`conc-${item.id}`);
+      if (el) item.conclusion = el.value;
+    });
+
+    const docXml = buildDocx(session.items, session);
+
+    // Build minimal .docx (ZIP) using JSZip-free approach: 
+    // We'll use a data URI with the XML wrapped in a simple docx structure
+    // Since we can't use JSZip CDN, encode as base64 and offer download
+    // Use the fflate library bundled inline approach — actually let's just
+    // produce an HTML file the user can open and print, since docx needs ZIP
+
+    // Fallback: produce a well-formatted HTML that Word can open directly (.doc)
+    const endTime = session.endTime || new Date();
+    const doneN = session.items.filter(i=>i.done).length;
+    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    let rows = session.items.map((item,i) => {
+      const statusColor = item.isExtra ? '#e8eaf6' : (item.done ? '#d4edda' : '#fff3cd');
+      const statusText = item.isExtra ? '現場新增' : (item.done ? '已確認' : '未結案');
+      const concl = item.conclusion || '';
+      const photoNote = item.photos.length ? `📷 共 ${item.photos.length} 張（請參閱原始紀錄）` : '';
+      return `
+        <tr style="background:#e8eaed;">
+          <td style="width:36px;text-align:center;font-weight:bold;font-size:13px;padding:6px 4px;">${i+1}</td>
+          <td style="font-weight:bold;font-size:13px;padding:6px 8px;">${esc(item.topic)}${item.isExtra?' <span style="font-size:11px;color:#555">(臨時)</span>':''}</td>
+          <td style="text-align:center;background:${statusColor};font-weight:bold;font-size:12px;padding:6px 4px;width:70px;">${statusText}</td>
+        </tr>
+        <tr>
+          <td style="font-size:11px;color:#888;padding:4px 4px 4px 8px;background:#fafafa;">結論</td>
+          <td colspan="2" style="padding:6px 8px;font-size:13px;min-height:32px;">${esc(concl)}${!concl?'<span style="color:#bbb;font-style:italic;">（未填寫）</span>':''}${photoNote?`<br><span style="font-size:11px;color:#777;">${esc(photoNote)}</span>`:''}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<style>
+  body { font-family: "新細明體","PMingLiU",serif; margin:1.5cm; }
+  h1 { font-size:22pt; text-align:center; margin-bottom:12px; }
+  table { border-collapse:collapse; width:100%; margin-bottom:12px; }
+  td, th { border:1px solid #ccc; padding:5px 8px; vertical-align:top; }
+  .meta td { font-size:11pt; }
+  .meta .lbl { background:#f0ede6; font-weight:bold; width:80px; }
+  .items th { background:#1c1a16; color:#f5f0e8; font-size:11pt; }
+  .sig td { height:60px; text-align:center; font-size:10pt; color:#555; vertical-align:bottom; }
+</style></head>
+<body>
+<h1>工地巡視會勘紀錄表</h1>
+<table class="meta">
+  <tr><td class="lbl">巡視單位</td><td>${esc(session.unit)}</td><td class="lbl">主持長官</td><td>${esc(session.officer)}</td></tr>
+  <tr><td class="lbl">陪同人員</td><td>${esc(session.escort||'—')}</td><td class="lbl">會勘日期</td><td>${esc(session.date)}</td></tr>
+  <tr><td class="lbl">主辦單位</td><td>${esc(session.org||'—')}</td><td class="lbl">討論事項</td><td>${session.items.length} 項（${doneN} 已確認）</td></tr>
+</table>
+<table class="items">
+  <thead><tr><th style="width:36px;">#</th><th>討論事項</th><th style="width:70px;">狀態</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<table class="sig">
+  <tr>
+    <td style="width:40%;text-align:left;color:#888;font-size:10pt;">製表：${esc(fmtDateTime(endTime))}</td>
+    <td style="width:30%;">主持長官簽名</td>
+    <td style="width:30%;">紀錄人員簽名</td>
+  </tr>
+</table>
+</body></html>`;
+
+    // Download as .doc (HTML-based Word format, opens in Word/Pages directly)
+    const b64 = btoa(unescape(encodeURIComponent(html)));
+    const dataUri = 'data:application/msword;base64,' + b64;
+    const fname = `會勘紀錄_${session.unit}_${session.date.replace(/\//g,'-')}.doc`;
+    const a = document.createElement('a');
+    a.href = dataUri;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('✅ Word 檔下載中，可用 Word/Pages 開啟編輯');
+  } catch(e) {
+    console.error(e);
+    showToast('❌ 產生失敗：' + e.message);
+  }
+  btn.textContent = '📝 匯出 Word';
+  btn.disabled = false;
+}
+
+
+// ══ Copy text ══
+function copyReportText() {
+  let t = `【工地巡視會勘紀錄表】\n`;
+  t += `巡視單位：${session.unit}\n`;
+  t += `主持長官：${session.officer}\n`;
+  if (session.escort) t += `陪同人員：${session.escort}\n`;
+  if (session.org) t += `主辦單位：${session.org}\n`;
+  t += `會勘日期：${session.date}\n`;
+  t += `${'─'.repeat(36)}\n\n`;
+  session.items.forEach((item,i) => {
+    t += `【${i+1}】${item.topic}${item.isExtra?' ★臨時新增':''}\n`;
+    t += `結論：${item.conclusion || '（未填寫）'}\n`;
+    if (item.photos.length) t += `照片：${item.photos.length} 張\n`;
+    t += '\n';
+  });
+  t += `${'─'.repeat(36)}\n製表：${fmtDateTime(new Date())}`;
+  navigator.clipboard.writeText(t).then(() => showToast('✅ 已複製到剪貼板'));
+}
+
+// ══ Helpers ══
+function fmtDate(d) {
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`;
+}
+function fmtDateTime(d) {
+  if (!d) return '—';
+  return `${fmtDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function getDuration(a, b) {
+  const s = Math.floor((b-a)/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  return h ? `${h} 小時 ${m} 分` : `${m} 分 ${s%60} 秒`;
+}
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+
+// ══ Resume on load ══
+(function() {
+  const saved = loadSession();
+  if (!saved) return;
+  const t = saved.startTime ? new Date(saved.startTime).toLocaleString('zh-TW') : '';
+  const doneN = (saved.items||[]).filter(i=>i.done).length;
+  if (!confirm(`偵測到上次未完成的會勘紀錄：\n\n📍 ${saved.unit}　👤 ${saved.officer}\n🕐 ${t}\n📋 共 ${(saved.items||[]).length} 項（${doneN} 項已完成）\n\n是否繼續上次的紀錄？\n（選「取消」將清除舊紀錄）`)) {
+    clearSession(); return;
+  }
+  session = saved;
+  document.getElementById('iUnit').value = saved.unit || '';
+  document.getElementById('iOfficer').value = saved.officer || '';
+  document.getElementById('iEscort').value = saved.escort || '';
+  document.getElementById('iDate').value = saved.date || '';
+  document.getElementById('iOrg').value = saved.org || '';
+  renderAgenda();
+  updateProgress();
+  switchTab('agenda');
+  showToast(`✅ 已還原 ${(saved.items||[]).length} 項議題紀錄`);
+})();
+
+// Init date
+document.getElementById('iDate').value = new Date().toISOString().split('T')[0];
+</script>
+</body>
+</html>
