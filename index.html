@@ -672,6 +672,75 @@ header {
   padding: 0;
   flex-direction: column;
 }
+.editor-box {
+  width: min(100%, 980px);
+  height: min(100%, 92vh);
+  background: #121212;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.editor-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px;
+  background: #1c1a16;
+  border-bottom: 1px solid #333;
+}
+.editor-btn {
+  border: 1px solid #555;
+  background: #2a2820;
+  color: #f5f0e8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: 700 13px 'Noto Sans TC', sans-serif;
+  cursor: pointer;
+}
+.editor-btn.active { background: var(--red); border-color: var(--red); }
+.editor-input {
+  min-width: 160px;
+  flex: 1;
+  border: 1px solid #555;
+  background: #faf7f2;
+  color: #1c1a16;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: 600 13px 'Noto Sans TC', sans-serif;
+}
+.editor-canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: #0b0b0b;
+}
+#photoEditorCanvas {
+  max-width: 100%;
+  max-height: 100%;
+  background: #fff;
+  touch-action: none;
+}
+.photo-edit {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  width: auto;
+  min-width: 30px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(26,74,122,0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 6px;
+}
 
 /* Add item modal */
 .modal-box {
@@ -850,6 +919,25 @@ input[type="file"] { display: none; }
 <!-- Image modal -->
 <div class="overlay" id="imgOverlay" onclick="this.classList.remove('open')">
   <img id="overlayImg" src="" />
+</div>
+
+<!-- Photo editor modal -->
+<div class="overlay" id="photoEditorModal">
+  <div class="editor-box">
+    <div class="editor-toolbar">
+      <button class="editor-btn active" id="toolRect" onclick="setEditTool('rect')">框選</button>
+      <button class="editor-btn" id="toolCircle" onclick="setEditTool('circle')">圈選</button>
+      <button class="editor-btn" id="toolArrow" onclick="setEditTool('arrow')">箭頭</button>
+      <button class="editor-btn" id="toolText" onclick="setEditTool('text')">文字</button>
+      <input class="editor-input" id="editorTextInput" type="text" placeholder="文字標註內容" />
+      <button class="editor-btn" onclick="undoEditMark()">復原</button>
+      <button class="editor-btn" onclick="saveEditedPhoto()">儲存</button>
+      <button class="editor-btn" onclick="closePhotoEditor()">取消</button>
+    </div>
+    <div class="editor-canvas-wrap">
+      <canvas id="photoEditorCanvas"></canvas>
+    </div>
+  </div>
 </div>
 
 <!-- Add item modal -->
@@ -1065,15 +1153,32 @@ function handlePhotoInput(e, itemId) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = async ev => {
     const item = session.items.find(i => i.id === itemId);
     if (!item) return;
-    item.photos.push(ev.target.result);
-    addThumb(itemId, ev.target.result, item.photos.length - 1);
+    const src = await resizePhotoDataUrl(ev.target.result);
+    item.photos.push(src);
+    addThumb(itemId, src, item.photos.length - 1);
     e.target.value = '';
     saveSession();
   };
   reader.readAsDataURL(file);
+}
+
+function resizePhotoDataUrl(src, maxSide = 1600, quality = 0.86) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
 }
 
 function addThumb(itemId, src, photoIdx) {
@@ -1084,6 +1189,7 @@ function addThumb(itemId, src, photoIdx) {
   wrap.id = `thumb-${itemId}-${photoIdx}`;
   wrap.innerHTML = `
     <img class="photo-thumb" src="${src}" onclick="openImg('${itemId}','${photoIdx}')" />
+    <button class="photo-edit" onclick="openPhotoEditor(${itemId},${photoIdx})">標註</button>
     <button class="photo-del" onclick="delPhoto(${itemId},${photoIdx})">✕</button>
   `;
   container.appendChild(wrap);
@@ -1106,6 +1212,159 @@ function openImg(itemId, photoIdx) {
   document.getElementById('overlayImg').src = item.photos[photoIdx];
   document.getElementById('imgOverlay').classList.add('open');
 }
+
+let editorState = {
+  itemId: null,
+  photoIdx: null,
+  image: null,
+  tool: 'rect',
+  marks: [],
+  start: null,
+  draft: null
+};
+
+function setEditTool(tool) {
+  editorState.tool = tool;
+  ['Rect','Circle','Arrow','Text'].forEach(name => {
+    document.getElementById(`tool${name}`).classList.toggle('active', tool === name.toLowerCase());
+  });
+}
+
+function openPhotoEditor(itemId, photoIdx) {
+  const item = session.items.find(i => i.id === itemId);
+  if (!item || !item.photos[photoIdx]) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.getElementById('photoEditorCanvas');
+    const maxW = 1600;
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    editorState = { itemId, photoIdx, image: img, tool: editorState.tool || 'rect', marks: [], start: null, draft: null };
+    drawEditorCanvas();
+    document.getElementById('photoEditorModal').classList.add('open');
+  };
+  img.src = item.photos[photoIdx];
+}
+
+function closePhotoEditor() {
+  document.getElementById('photoEditorModal').classList.remove('open');
+  editorState.start = null;
+  editorState.draft = null;
+}
+
+function getCanvasPoint(ev) {
+  const canvas = document.getElementById('photoEditorCanvas');
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (ev.clientX - rect.left) * canvas.width / rect.width,
+    y: (ev.clientY - rect.top) * canvas.height / rect.height
+  };
+}
+
+function drawArrow(ctx, x1, y1, x2, y2) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const head = 24;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMark(ctx, mark) {
+  ctx.save();
+  ctx.strokeStyle = '#d81e1e';
+  ctx.fillStyle = '#d81e1e';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (mark.tool === 'rect') {
+    ctx.strokeRect(mark.x1, mark.y1, mark.x2 - mark.x1, mark.y2 - mark.y1);
+  } else if (mark.tool === 'circle') {
+    const cx = (mark.x1 + mark.x2) / 2;
+    const cy = (mark.y1 + mark.y2) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, Math.abs(mark.x2 - mark.x1) / 2, Math.abs(mark.y2 - mark.y1) / 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (mark.tool === 'arrow') {
+    drawArrow(ctx, mark.x1, mark.y1, mark.x2, mark.y2);
+  } else if (mark.tool === 'text') {
+    ctx.font = '700 48px "Noto Sans TC", sans-serif';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeText(mark.text, mark.x1, mark.y1);
+    ctx.fillText(mark.text, mark.x1, mark.y1);
+  }
+  ctx.restore();
+}
+
+function drawEditorCanvas() {
+  const canvas = document.getElementById('photoEditorCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (editorState.image) ctx.drawImage(editorState.image, 0, 0, canvas.width, canvas.height);
+  editorState.marks.forEach(mark => drawMark(ctx, mark));
+  if (editorState.draft) drawMark(ctx, editorState.draft);
+}
+
+function undoEditMark() {
+  editorState.marks.pop();
+  drawEditorCanvas();
+}
+
+function saveEditedPhoto() {
+  const item = session.items.find(i => i.id === editorState.itemId);
+  if (!item) return;
+  drawEditorCanvas();
+  const canvas = document.getElementById('photoEditorCanvas');
+  item.photos[editorState.photoIdx] = canvas.toDataURL('image/jpeg', 0.9);
+  const img = document.querySelector(`#thumb-${editorState.itemId}-${editorState.photoIdx} .photo-thumb`);
+  if (img) img.src = item.photos[editorState.photoIdx];
+  saveSession();
+  closePhotoEditor();
+  showToast('✅ 已儲存照片標註');
+}
+
+document.getElementById('photoEditorCanvas').addEventListener('pointerdown', ev => {
+  if (!editorState.image) return;
+  const p = getCanvasPoint(ev);
+  if (editorState.tool === 'text') {
+    const text = document.getElementById('editorTextInput').value.trim() || prompt('輸入標註文字');
+    if (text) {
+      editorState.marks.push({ tool: 'text', x1: p.x, y1: p.y, text });
+      drawEditorCanvas();
+    }
+    return;
+  }
+  editorState.start = p;
+  editorState.draft = { tool: editorState.tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+  ev.currentTarget.setPointerCapture(ev.pointerId);
+});
+
+document.getElementById('photoEditorCanvas').addEventListener('pointermove', ev => {
+  if (!editorState.start || !editorState.draft) return;
+  const p = getCanvasPoint(ev);
+  editorState.draft.x2 = p.x;
+  editorState.draft.y2 = p.y;
+  drawEditorCanvas();
+});
+
+document.getElementById('photoEditorCanvas').addEventListener('pointerup', ev => {
+  if (!editorState.start || !editorState.draft) return;
+  const mark = editorState.draft;
+  if (Math.abs(mark.x2 - mark.x1) > 8 || Math.abs(mark.y2 - mark.y1) > 8) {
+    editorState.marks.push(mark);
+  }
+  editorState.start = null;
+  editorState.draft = null;
+  drawEditorCanvas();
+});
 
 // ══ Done / Undo ══
 function doneItem(id) {
@@ -1359,18 +1618,35 @@ async function exportPDF() {
 
 // ══ Export Word (.docx) — pure JS, no CDN ══
 // Minimal OOXML/docx builder
-function buildDocx(items, session) {
+function buildDocx(items, session, docxImages = []) {
   const endTime = session.endTime || new Date();
   const doneN = items.filter(i=>i.done).length;
   const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   const statusText = item => item.isExtra ? '現場新增' : (item.done ? '已確認' : '未結案');
+  const imageXml = img => `
+        <w:p><w:pPr><w:spacing w:before="80" w:after="80"/></w:pPr><w:r><w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${img.cx}" cy="${img.cy}"/>
+            <wp:docPr id="${img.docPrId}" name="現場照片 ${img.docPrId}"/>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr><pic:cNvPr id="0" name="${esc(img.filename)}"/><pic:cNvPicPr/></pic:nvPicPr>
+                  <pic:blipFill><a:blip r:embed="${img.rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${img.cx}" cy="${img.cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing></w:r></w:p>`;
 
   // Build table rows for each item
   let itemRows = '';
   items.forEach((item, i) => {
     const concl = item.conclusion || '（未填寫）';
-    const photoNote = item.photos.length ? `共 ${item.photos.length} 張（請參閱原始紀錄）` : '';
+    const itemImages = docxImages.filter(img => img.itemIndex === i);
+    const photoBlocks = itemImages.map(imageXml).join('');
     itemRows += `
     <w:tr>
       <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="E8EAED"/></w:tcPr>
@@ -1386,18 +1662,21 @@ function buildDocx(items, session) {
       <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
         <w:p><w:r><w:rPr><w:sz w:val="20"/>${!item.conclusion?'<w:color w:val="AAAAAA"/>':''}</w:rPr><w:t xml:space="preserve">${esc(concl)}</w:t></w:r></w:p></w:tc>
     </w:tr>
-    ${photoNote ? `<w:tr>
+    ${photoBlocks ? `<w:tr>
       <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="F8F8F8"/></w:tcPr>
         <w:p><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>照片</w:t></w:r></w:p></w:tc>
       <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
-        <w:p><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>${esc(photoNote)}</w:t></w:r></w:p></w:tc>
+        ${photoBlocks}</w:tc>
     </w:tr>` : ''}`;
   });
 
   const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
   xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
 <w:body>
   <!-- Title -->
   <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="120"/></w:pPr>
@@ -1500,6 +1779,61 @@ function strToUint8(str) {
   return new TextEncoder().encode(str);
 }
 
+function dataUrlToBytes(dataUrl) {
+  const parts = dataUrl.split(',');
+  const meta = parts[0] || '';
+  const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const binary = atob(parts[1] || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return { bytes, mime };
+}
+
+function getImageInfo(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+    img.onerror = () => resolve({ width: 1200, height: 900 });
+    img.src = src;
+  });
+}
+
+async function prepareDocxImages(items) {
+  const images = [];
+  let n = 1;
+  for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+    const item = items[itemIndex];
+    for (let photoIndex = 0; photoIndex < item.photos.length; photoIndex++) {
+      const src = item.photos[photoIndex];
+      const { bytes, mime } = dataUrlToBytes(src);
+      const ext = mime.includes('png') ? 'png' : 'jpg';
+      const info = await getImageInfo(src);
+      const maxCx = 4320000;
+      const maxCy = 3240000;
+      const ratio = info.width / Math.max(info.height, 1);
+      let cx = maxCx;
+      let cy = Math.round(maxCx / ratio);
+      if (cy > maxCy) {
+        cy = maxCy;
+        cx = Math.round(maxCy * ratio);
+      }
+      images.push({
+        itemIndex,
+        photoIndex,
+        rid: `rIdImg${n}`,
+        docPrId: 1000 + n,
+        filename: `photo_${itemIndex + 1}_${photoIndex + 1}.${ext}`,
+        bytes,
+        mime,
+        cx,
+        cy
+      });
+      n++;
+    }
+  }
+  return images;
+}
+
 let crcTable = null;
 function crc32(bytes) {
   if (!crcTable) {
@@ -1582,11 +1916,14 @@ function createZip(files) {
   return concatBytes([...localParts, central, end]);
 }
 
-function buildDocxBlob(docXml) {
+function buildDocxBlob(docXml, images = []) {
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
@@ -1597,8 +1934,11 @@ function buildDocxBlob(docXml) {
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
 </Relationships>`;
+  const imageRels = images.map(img => `
+  <Relationship Id="${img.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${img.filename}"/>`).join('');
   const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${imageRels}
+</Relationships>`;
   const created = new Date().toISOString();
   const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
@@ -1618,14 +1958,16 @@ function buildDocxBlob(docXml) {
   <Application>會勘紀錄工具</Application>
 </Properties>`;
 
-  const zip = createZip([
+  const files = [
     { name: '[Content_Types].xml', data: contentTypes },
     { name: '_rels/.rels', data: rels },
     { name: 'word/_rels/document.xml.rels', data: docRels },
     { name: 'word/document.xml', data: docXml },
     { name: 'docProps/core.xml', data: core },
     { name: 'docProps/app.xml', data: app },
-  ]);
+    ...images.map(img => ({ name: `word/media/${img.filename}`, data: img.bytes }))
+  ];
+  const zip = createZip(files);
   return new Blob([zip], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
@@ -1640,8 +1982,9 @@ async function exportWord() {
       if (el) item.conclusion = el.value;
     });
 
-    const docXml = buildDocx(session.items, session);
-    const blob = buildDocxBlob(docXml);
+    const images = await prepareDocxImages(session.items);
+    const docXml = buildDocx(session.items, session, images);
+    const blob = buildDocxBlob(docXml, images);
     const fname = makeReportFilename('docx');
     downloadBlob(blob, fname);
     showToast('✅ Word 檔已開始下載，可直接交付或編輯');
