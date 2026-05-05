@@ -666,6 +666,12 @@ header {
 }
 .overlay.open { display: flex; }
 .overlay img { max-width: 100%; max-height: 85vh; border-radius: 8px; object-fit: contain; }
+#pdfModal {
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  flex-direction: column;
+}
 
 /* Add item modal */
 .modal-box {
@@ -861,9 +867,10 @@ input[type="file"] { display: none; }
   </div>
 </div>
 
-
+<div class="overlay" id="pdfModal">
+  <div style="background:#1c1a16;color:#f5f0e8;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;">
     <a id="pdfDownloadLink" download="" style="background:#c0392b;color:#fff;font-weight:700;font-size:13px;padding:8px 14px;border-radius:8px;text-decoration:none;">⬇ 下載</a>
-    <button onclick="document.getElementById('pdfModal').classList.remove('open')" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;padding:0 4px;">✕</button>
+    <button onclick="closePdfModal()" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;padding:0 4px;">✕</button>
   </div>
   <div style="font-size:11px;color:#aaa;background:#2a2820;padding:6px 16px;text-align:center;flex-shrink:0;">
     iPhone 用戶：點「⬇ 下載」→ 長按 → 「儲存到檔案」或「分享」
@@ -1254,6 +1261,48 @@ function printPage() {
   setTimeout(() => window.print(), 400);
 }
 
+function makeReportFilename(ext) {
+  const unit = (session.unit || '未命名').replace(/[\\/:*?"<>|]/g, '').trim() || '未命名';
+  const date = (session.date || fmtDate(new Date())).replace(/\//g, '-');
+  return `會勘紀錄_${unit}_${date}.${ext}`;
+}
+
+function downloadBlob(blob, filename) {
+  if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+    window.navigator.msSaveOrOpenBlob(blob, filename);
+    return true;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return url;
+}
+
+function showDownloadModal(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.getElementById('pdfDownloadLink');
+  link.href = url;
+  link.download = filename;
+  document.getElementById('pdfFrame').src = url;
+  document.getElementById('pdfModal').dataset.url = url;
+  document.getElementById('pdfModal').classList.add('open');
+}
+
+function closePdfModal() {
+  const modal = document.getElementById('pdfModal');
+  const url = modal.dataset.url;
+  modal.classList.remove('open');
+  document.getElementById('pdfFrame').src = 'about:blank';
+  if (url) URL.revokeObjectURL(url);
+  modal.dataset.url = '';
+}
+
 // ══ Export PDF ══
 async function exportPDF() {
   const btn = document.getElementById('btnPdf');
@@ -1291,20 +1340,18 @@ async function exportPDF() {
       if (remaining > 0) pdf.addPage();
     }
 
-    // Safari/iOS: open in new tab then user uses Share → Save to Files
     const pdfBlob = pdf.output('blob');
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    const newTab = window.open(blobUrl, '_blank');
-    if (!newTab) {
-      // Fallback: trigger print dialog which iOS can save as PDF
-      showToast('請用分享鍵「□↑」→「列印」→ 捏合放大 → 存PDF');
-      setTimeout(() => window.print(), 300);
+    const fname = makeReportFilename('pdf');
+    const result = downloadBlob(pdfBlob, fname);
+    if (typeof result === 'string') {
+      showDownloadModal(pdfBlob, fname);
+      showToast('✅ PDF 已產生，若未自動下載可點上方「下載」');
     } else {
-      showToast('✅ 已開啟新頁面，點「□↑」分享鍵 → 儲存到檔案');
+      showToast('✅ PDF 已開始下載');
     }
   } catch(e) {
     console.error(e);
-    showToast('❌ 產生失敗，請截圖保存');
+    showToast('❌ 產生失敗，請改用「列印存PDF」');
   }
   btn.textContent = '⬇ 下載 PDF';
   btn.disabled = false;
@@ -1449,9 +1496,137 @@ function buildDocx(items, session) {
   return docXml;
 }
 
-// Base64 encode for zip
 function strToUint8(str) {
   return new TextEncoder().encode(str);
+}
+
+let crcTable = null;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      crcTable[n] = c >>> 0;
+    }
+  }
+  let crc = 0 ^ -1;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+  return (crc ^ -1) >>> 0;
+}
+
+function u16(n) {
+  const b = new Uint8Array(2);
+  b[0] = n & 255;
+  b[1] = (n >>> 8) & 255;
+  return b;
+}
+
+function u32(n) {
+  const b = new Uint8Array(4);
+  b[0] = n & 255;
+  b[1] = (n >>> 8) & 255;
+  b[2] = (n >>> 16) & 255;
+  b[3] = (n >>> 24) & 255;
+  return b;
+}
+
+function concatBytes(parts) {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach(p => {
+    out.set(p, offset);
+    offset += p.length;
+  });
+  return out;
+}
+
+function dosTimeDate(d) {
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  return { time, date };
+}
+
+function createZip(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const now = dosTimeDate(new Date());
+
+  files.forEach(file => {
+    const nameBytes = strToUint8(file.name);
+    const data = typeof file.data === 'string' ? strToUint8(file.data) : file.data;
+    const crc = crc32(data);
+    const local = concatBytes([
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes, data
+    ]);
+    localParts.push(local);
+
+    const central = concatBytes([
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0),
+      u16(0), u16(0), u32(0), u32(offset), nameBytes
+    ]);
+    centralParts.push(central);
+    offset += local.length;
+  });
+
+  const centralOffset = offset;
+  const central = concatBytes(centralParts);
+  const end = concatBytes([
+    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+    u32(central.length), u32(centralOffset), u16(0)
+  ]);
+  return concatBytes([...localParts, central, end]);
+}
+
+function buildDocxBlob(docXml) {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+  const created = new Date().toISOString();
+  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/"
+  xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>工地巡視會勘紀錄表</dc:title>
+  <dc:creator>會勘紀錄工具</dc:creator>
+  <cp:lastModifiedBy>會勘紀錄工具</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
+</cp:coreProperties>`;
+  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+  xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>會勘紀錄工具</Application>
+</Properties>`;
+
+  const zip = createZip([
+    { name: '[Content_Types].xml', data: contentTypes },
+    { name: '_rels/.rels', data: rels },
+    { name: 'word/_rels/document.xml.rels', data: docRels },
+    { name: 'word/document.xml', data: docXml },
+    { name: 'docProps/core.xml', data: core },
+    { name: 'docProps/app.xml', data: app },
+  ]);
+  return new Blob([zip], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
 async function exportWord() {
@@ -1466,80 +1641,10 @@ async function exportWord() {
     });
 
     const docXml = buildDocx(session.items, session);
-
-    // Build minimal .docx (ZIP) using JSZip-free approach: 
-    // We'll use a data URI with the XML wrapped in a simple docx structure
-    // Since we can't use JSZip CDN, encode as base64 and offer download
-    // Use the fflate library bundled inline approach — actually let's just
-    // produce an HTML file the user can open and print, since docx needs ZIP
-
-    // Fallback: produce a well-formatted HTML that Word can open directly (.doc)
-    const endTime = session.endTime || new Date();
-    const doneN = session.items.filter(i=>i.done).length;
-    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-    let rows = session.items.map((item,i) => {
-      const statusColor = item.isExtra ? '#e8eaf6' : (item.done ? '#d4edda' : '#fff3cd');
-      const statusText = item.isExtra ? '現場新增' : (item.done ? '已確認' : '未結案');
-      const concl = item.conclusion || '';
-      const photoNote = item.photos.length ? `📷 共 ${item.photos.length} 張（請參閱原始紀錄）` : '';
-      return `
-        <tr style="background:#e8eaed;">
-          <td style="width:36px;text-align:center;font-weight:bold;font-size:13px;padding:6px 4px;">${i+1}</td>
-          <td style="font-weight:bold;font-size:13px;padding:6px 8px;">${esc(item.topic)}${item.isExtra?' <span style="font-size:11px;color:#555">(臨時)</span>':''}</td>
-          <td style="text-align:center;background:${statusColor};font-weight:bold;font-size:12px;padding:6px 4px;width:70px;">${statusText}</td>
-        </tr>
-        <tr>
-          <td style="font-size:11px;color:#888;padding:4px 4px 4px 8px;background:#fafafa;">結論</td>
-          <td colspan="2" style="padding:6px 8px;font-size:13px;min-height:32px;">${esc(concl)}${!concl?'<span style="color:#bbb;font-style:italic;">（未填寫）</span>':''}${photoNote?`<br><span style="font-size:11px;color:#777;">${esc(photoNote)}</span>`:''}</td>
-        </tr>`;
-    }).join('');
-
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
-xmlns:w="urn:schemas-microsoft-com:office:word"
-xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="UTF-8">
-<style>
-  body { font-family: "新細明體","PMingLiU",serif; margin:1.5cm; }
-  h1 { font-size:22pt; text-align:center; margin-bottom:12px; }
-  table { border-collapse:collapse; width:100%; margin-bottom:12px; }
-  td, th { border:1px solid #ccc; padding:5px 8px; vertical-align:top; }
-  .meta td { font-size:11pt; }
-  .meta .lbl { background:#f0ede6; font-weight:bold; width:80px; }
-  .items th { background:#1c1a16; color:#f5f0e8; font-size:11pt; }
-  .sig td { height:60px; text-align:center; font-size:10pt; color:#555; vertical-align:bottom; }
-</style></head>
-<body>
-<h1>工地巡視會勘紀錄表</h1>
-<table class="meta">
-  <tr><td class="lbl">巡視單位</td><td>${esc(session.unit)}</td><td class="lbl">主持長官</td><td>${esc(session.officer)}</td></tr>
-  <tr><td class="lbl">陪同人員</td><td>${esc(session.escort||'—')}</td><td class="lbl">會勘日期</td><td>${esc(session.date)}</td></tr>
-  <tr><td class="lbl">主辦單位</td><td>${esc(session.org||'—')}</td><td class="lbl">討論事項</td><td>${session.items.length} 項（${doneN} 已確認）</td></tr>
-</table>
-<table class="items">
-  <thead><tr><th style="width:36px;">#</th><th>討論事項</th><th style="width:70px;">狀態</th></tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-<table class="sig">
-  <tr>
-    <td style="width:40%;text-align:left;color:#888;font-size:10pt;">製表：${esc(fmtDateTime(endTime))}</td>
-    <td style="width:30%;">主持長官簽名</td>
-    <td style="width:30%;">紀錄人員簽名</td>
-  </tr>
-</table>
-</body></html>`;
-
-    // Download as .doc (HTML-based Word format, opens in Word/Pages directly)
-    const b64 = btoa(unescape(encodeURIComponent(html)));
-    const dataUri = 'data:application/msword;base64,' + b64;
-    const fname = `會勘紀錄_${session.unit}_${session.date.replace(/\//g,'-')}.doc`;
-    const a = document.createElement('a');
-    a.href = dataUri;
-    a.download = fname;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast('✅ Word 檔下載中，可用 Word/Pages 開啟編輯');
+    const blob = buildDocxBlob(docXml);
+    const fname = makeReportFilename('docx');
+    downloadBlob(blob, fname);
+    showToast('✅ Word 檔已開始下載，可直接交付或編輯');
   } catch(e) {
     console.error(e);
     showToast('❌ 產生失敗：' + e.message);
