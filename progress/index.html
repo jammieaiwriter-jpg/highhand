@@ -85,6 +85,12 @@
     }
     input, select { min-height: 36px; padding: 0 10px; width: 100%; }
     textarea { width: 100%; min-height: 86px; padding: 10px; resize: vertical; }
+    #ghToken {
+      min-height: 76px;
+      font-family: Consolas, "Segoe UI", monospace;
+      -webkit-text-security: disc;
+      text-security: disc;
+    }
     .table-wrap {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -291,7 +297,7 @@
       <div class="form-grid">
         <div class="field">
           <label>Repository</label>
-          <input id="ghRepo" placeholder="owner/repo，例如 linghua/progress-tracker" />
+          <input id="ghRepo" placeholder="jammieaiwriter-jpg/highhand" />
         </div>
         <div class="field">
           <label>Branch</label>
@@ -303,10 +309,15 @@
         </div>
         <div class="field">
           <label>GitHub Token</label>
-          <input id="ghToken" type="password" placeholder="fine-grained token，需 Contents read/write" />
+          <textarea id="ghToken" placeholder="貼上 GitHub fine-grained token，需 Contents read/write"></textarea>
+          <div class="actions" style="margin-top:8px;">
+            <button type="button" onclick="pasteGithubToken()">貼上Token</button>
+            <button type="button" onclick="toggleGithubToken()">顯示/隱藏</button>
+            <button type="button" onclick="clearGithubToken()">清除Token</button>
+          </div>
         </div>
       </div>
-      <div class="sync-note" id="syncStatus">尚未同步。</div>
+      <div class="sync-note" id="syncStatus">第一次設定後，此瀏覽器會記住 Token。換手機或換瀏覽器時才需要重貼。</div>
       <div class="modal-actions">
         <button value="close">關閉</button>
         <button type="button" onclick="saveGithubConfig()">儲存設定</button>
@@ -703,7 +714,7 @@
     }
     function openGithubSync() {
       const config = getGithubConfig();
-      document.getElementById("ghRepo").value = config.repo || "";
+      document.getElementById("ghRepo").value = config.repo || "jammieaiwriter-jpg/highhand";
       document.getElementById("ghBranch").value = config.branch || "main";
       document.getElementById("ghPath").value = config.path || "progress/data/progress_data.json";
       document.getElementById("ghToken").value = config.token || "";
@@ -719,13 +730,35 @@
     }
     function saveGithubConfig() {
       const config = {
-        repo: document.getElementById("ghRepo").value.trim(),
+        repo: document.getElementById("ghRepo").value.trim() || "jammieaiwriter-jpg/highhand",
         branch: document.getElementById("ghBranch").value.trim() || "main",
         path: document.getElementById("ghPath").value.trim() || "progress/data/progress_data.json",
         token: document.getElementById("ghToken").value.trim()
       };
       localStorage.setItem("93h-github-config", JSON.stringify(config));
       document.getElementById("syncStatus").textContent = "設定已儲存。";
+    }
+    async function pasteGithubToken() {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById("ghToken").value = text.trim();
+        document.getElementById("syncStatus").textContent = "Token 已從剪貼簿貼上。";
+      } catch {
+        document.getElementById("syncStatus").textContent = "無法自動讀取剪貼簿，請長按或 Ctrl+V 手動貼上。";
+        document.getElementById("ghToken").focus();
+      }
+    }
+    function toggleGithubToken() {
+      const field = document.getElementById("ghToken");
+      field.style.webkitTextSecurity = field.style.webkitTextSecurity === "disc" ? "none" : "disc";
+      field.style.textSecurity = field.style.textSecurity === "disc" ? "none" : "disc";
+    }
+    function clearGithubToken() {
+      const config = getGithubConfig();
+      config.token = "";
+      localStorage.setItem("93h-github-config", JSON.stringify(config));
+      document.getElementById("ghToken").value = "";
+      document.getElementById("syncStatus").textContent = "Token 已清除。";
     }
     function utf8ToBase64(text) {
       const bytes = new TextEncoder().encode(text);
