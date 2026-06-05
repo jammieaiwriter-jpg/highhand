@@ -427,15 +427,23 @@
       render();
     }
     function setupFilters() {
+      const current = {
+        project: document.getElementById("project").value,
+        status: document.getElementById("status").value,
+        trade: document.getElementById("trade").value,
+        owner: document.getElementById("owner").value
+      };
       const projects = [...new Set(items.map(x => x["案場"]).filter(Boolean))].sort();
-      const currentProject = document.getElementById("project").value;
       document.getElementById("project").innerHTML = '<option value="">全部案場</option>' + projects.map(x => `<option>${escapeHtml(x)}</option>`).join("");
-      document.getElementById("project").value = projects.includes(currentProject) ? currentProject : "";
+      document.getElementById("project").value = projects.includes(current.project) ? current.project : "";
       document.getElementById("status").innerHTML = '<option value="">全部狀態</option>' + statuses.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("status").value = statuses.includes(current.status) ? current.status : "";
       const trades = [...new Set(items.map(x => x["工項"]).filter(Boolean))].sort();
       document.getElementById("trade").innerHTML = '<option value="">全部工項</option>' + trades.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("trade").value = trades.includes(current.trade) ? current.trade : "";
       const owners = [...new Set(ownerOptions.concat(items.map(x => x["廠商/負責人"]).filter(Boolean)))];
       document.getElementById("owner").innerHTML = '<option value="">全部負責</option>' + owners.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("owner").value = owners.includes(current.owner) ? current.owner : "";
     }
     function isDone(item) { return ["完成", "取消"].includes(item["狀態"]); }
     function dueKind(item) {
@@ -513,11 +521,18 @@
     }
     function countStatus(status) { return items.filter(x => x["狀態"] === status).length; }
     function render() {
+      const tableWrap = document.querySelector(".table-wrap");
+      const scrollTop = tableWrap ? tableWrap.scrollTop : 0;
+      const scrollLeft = tableWrap ? tableWrap.scrollLeft : 0;
       renderSummary();
       const rows = filtered();
       const body = document.getElementById("tbody");
       if (!rows.length) {
         body.innerHTML = `<tr><td colspan="10"><div class="empty">沒有符合條件的項目</div></td></tr>`;
+        if (tableWrap) {
+          tableWrap.scrollTop = scrollTop;
+          tableWrap.scrollLeft = scrollLeft;
+        }
         return;
       }
       body.innerHTML = rows.map(item => {
@@ -542,6 +557,10 @@
           </div></td>
         </tr>`;
       }).join("");
+      if (tableWrap) {
+        tableWrap.scrollTop = scrollTop;
+        tableWrap.scrollLeft = scrollLeft;
+      }
     }
     function findItem(id) { return items.find(x => String(x["編號"]) === String(id)); }
     function addHistory(item, type, note, extra = {}) {
