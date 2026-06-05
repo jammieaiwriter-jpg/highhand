@@ -68,7 +68,7 @@
     textarea { width: 100%; min-height: 84px; padding: 10px; resize: vertical; }
     .layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
       gap: 14px;
     }
     .calendar-panel {
@@ -243,7 +243,7 @@
     <div class="top">
       <div>
         <h1>行事曆排程</h1>
-        <div class="meta" id="meta">輕量版：月曆看整月衝突，清單看今日、未來 7 天與本月事件。</div>
+        <div class="meta" id="meta">輕量版：月曆看整月衝突，文字清單只看今日與未來 7 天。</div>
       </div>
       <div class="actions">
         <a href="../"><button>入口首頁</button></a>
@@ -297,13 +297,6 @@
           <span class="pill todo" id="weekCount">0</span>
         </div>
         <div class="list" id="weekList"></div>
-      </div>
-      <div class="section">
-        <div class="section-head">
-          <div class="section-title" id="monthSectionTitle">本月事件</div>
-          <span class="pill todo" id="monthCount">0</span>
-        </div>
-        <div class="list" id="monthList"></div>
       </div>
     </section>
   </main>
@@ -369,16 +362,22 @@
     let calendarMonth = todayISO().slice(0, 7);
     let selectedDate = todayISO();
 
-    function todayISO() { return new Date().toISOString().slice(0, 10); }
+    function localDateISO(d) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    function todayISO() { return localDateISO(new Date()); }
     function addDays(base, days) {
       const d = new Date(base + "T00:00:00");
       d.setDate(d.getDate() + days);
-      return d.toISOString().slice(0, 10);
+      return localDateISO(d);
     }
     function monthAdd(monthText, delta) {
       const d = new Date(monthText + "-01T00:00:00");
       d.setMonth(d.getMonth() + delta);
-      return d.toISOString().slice(0, 7);
+      return localDateISO(d).slice(0, 7);
     }
     function monthLabel(monthText) {
       const [year, month] = monthText.split("-");
@@ -499,16 +498,12 @@
       const filtered = baseFiltered();
       const todayItems = filtered.filter(x => x["日期"] === today && !isDone(x));
       const weekItems = filtered.filter(x => x["日期"] >= today && x["日期"] <= weekEnd && !isDone(x));
-      const monthItems = filtered.filter(x => x["日期"].slice(0, 7) === calendarMonth);
       renderCalendar();
       document.getElementById("todaySectionTitle").textContent = "今日待辦";
-      document.getElementById("monthSectionTitle").textContent = `${monthLabel(calendarMonth)}事件`;
       document.getElementById("todayCount").textContent = todayItems.length;
       document.getElementById("weekCount").textContent = weekItems.length;
-      document.getElementById("monthCount").textContent = monthItems.length;
       document.getElementById("todayList").innerHTML = todayItems.length ? todayItems.map(renderEvent).join("") : `<div class="empty">今天沒有待辦</div>`;
       document.getElementById("weekList").innerHTML = weekItems.length ? weekItems.map(renderEvent).join("") : `<div class="empty">未來 7 天沒有排程</div>`;
-      document.getElementById("monthList").innerHTML = monthItems.length ? monthItems.map(renderEvent).join("") : `<div class="empty">本月沒有事件</div>`;
       document.getElementById("meta").textContent = `共 ${events.length} 筆事件，最後載入 ${new Date().toLocaleString("zh-TW")}`;
     }
     function renderCalendar() {
@@ -526,7 +521,7 @@
       for (let i = 0; i < 42; i++) {
         const d = new Date(start);
         d.setDate(start.getDate() + i);
-        const iso = d.toISOString().slice(0, 10);
+        const iso = localDateISO(d);
         const inMonth = iso.slice(0, 7) === calendarMonth;
         const dayEvents = events.filter(event => {
           if (event["日期"] !== iso) return false;
