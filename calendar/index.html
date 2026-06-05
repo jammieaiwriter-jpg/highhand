@@ -249,6 +249,7 @@
         <a href="../"><button>入口首頁</button></a>
         <a href="../progress/"><button>進度追蹤</button></a>
         <button onclick="openEvent()">新增事件</button>
+        <button onclick="syncProgressTasks()">同步進度任務</button>
         <button onclick="openGithubSync()">GitHub同步</button>
         <button onclick="exportCsv()">匯出CSV</button>
       </div>
@@ -359,9 +360,10 @@
   </dialog>
 
   <script>
-    const seedEvents = [{"id": "1", "案場": "93H", "日期": "2026-06-05", "時間": "", "類型": "進場", "標題": "塔吊/施工電梯基座切割完成度確認", "對象/廠商": "柏銘、協理、建麟", "地點": "工地", "關聯任務": "切割及運棄", "提醒": "確認完成度、磅單、收容證明、收善", "備註": "6/1進場，預計3~5工作天完成", "狀態": "待辦", "history": []}, {"id": "2", "案場": "93H", "日期": "2026-06-06", "時間": "", "類型": "安裝", "標題": "防火門收納框梯廳安裝確認", "對象/廠商": "新美/阿忠", "地點": "B2F/B1F 梯廳", "關聯任務": "防火門收納框(梯廳)", "提醒": "確認是否安裝完成並拍照", "備註": "", "狀態": "待辦", "history": []}, {"id": "3", "案場": "93H", "日期": "2026-07-31", "時間": "", "類型": "提醒", "標題": "確認四周開挖借地時間與備案", "對象/廠商": "工地", "地點": "", "關聯任務": "借地時間與不借地備案", "提醒": "確認10月中至12月中借地是否成立；若不借地，確認備案", "備註": "總經理5/13交辦，7月底提醒", "狀態": "待辦", "history": []}];
+    const seedEvents = [{"id": "1", "案場": "93H", "日期": "2026-06-05", "時間": "", "類型": "進場", "標題": "塔吊/施工電梯基座切割完成度確認", "對象/廠商": "柏銘、協理、建麟", "地點": "工地", "關聯任務": "切割及運棄", "提醒": "確認完成度、磅單、收容證明、收善", "備註": "6/1進場，預計3~5工作天完成", "狀態": "完成", "history": [{"time": "2026/6/5 下午4:11:45", "type": "完成"}]}, {"id": "2", "案場": "93H", "日期": "2026-06-06", "時間": "", "類型": "安裝", "標題": "防火門收納框梯廳安裝確認", "對象/廠商": "新美/阿忠", "地點": "B2F/B1F 梯廳", "關聯任務": "防火門收納框(梯廳)", "提醒": "確認是否安裝完成並拍照", "備註": "", "狀態": "待辦", "history": []}, {"id": "3", "案場": "93H", "日期": "2026-07-31", "時間": "", "類型": "提醒", "標題": "確認四周開挖借地時間與備案", "對象/廠商": "工地", "地點": "", "關聯任務": "借地時間與不借地備案", "提醒": "確認10月中至12月中借地是否成立；若不借地，確認備案", "備註": "總經理5/13交辦，7月底提醒", "狀態": "待辦", "history": []}];
     const eventTypes = ["會議", "提醒", "進場", "丈量", "安裝", "送簽", "回覆", "其他"];
     const statuses = ["待辦", "進行中", "完成", "取消"];
+    const doneStatuses = ["完成", "已完成", "已完成/已進場", "取消"];
     let events = [];
     let activeId = null;
     let calendarMonth = todayISO().slice(0, 7);
@@ -401,6 +403,50 @@
         "狀態": statuses.includes(event["狀態"]) ? event["狀態"] : "待辦",
         history: Array.isArray(event.history) ? event.history : []
       }));
+    }
+    function validDate(value) {
+      const text = String(value || "").slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+    }
+    function taskTitle(task) {
+      const title = task["追蹤事項"] || task["項目"] || "(未命名任務)";
+      const trade = task["工項"] || "";
+      return trade && !title.includes(trade) ? `${trade}｜${title}` : title;
+    }
+    function taskEventType(task) {
+      const text = ["工項", "追蹤事項", "本週動作", "備註", "前置條件"].map(k => task[k] || "").join(" ");
+      if (text.includes("會議")) return "會議";
+      if (text.includes("送簽") || text.includes("總經理") || text.includes("用印")) return "送簽";
+      if (text.includes("丈量") || text.includes("放樣")) return "丈量";
+      if (text.includes("安裝") || text.includes("施作")) return "安裝";
+      if (text.includes("進場") || text.includes("到料") || text.includes("入貨") || text.includes("進料")) return "進場";
+      if (text.includes("回覆") || text.includes("確認") || text.includes("報價")) return "回覆";
+      return "提醒";
+    }
+    function shouldSyncTask(task) {
+      if (doneStatuses.includes(task["狀態"])) return false;
+      if (task["原狀態"] === "歷史待複核") return false;
+      if (!validDate(task["承諾日期"])) return false;
+      return Boolean(taskTitle(task));
+    }
+    function taskToEvent(task, oldEvent) {
+      const taskId = String(task["編號"] || "").trim();
+      const oldHistory = oldEvent && Array.isArray(oldEvent.history) ? oldEvent.history : [];
+      return {
+        id: `task-${taskId}`,
+        "案場": task["案場"] || "93H",
+        "日期": validDate(task["承諾日期"]),
+        "時間": "",
+        "類型": taskEventType(task),
+        "標題": taskTitle(task),
+        "對象/廠商": task["廠商/負責人"] || "",
+        "地點": "",
+        "關聯任務": taskId,
+        "提醒": [task["本週動作"], task["前置條件"]].filter(Boolean).join("；"),
+        "備註": `由進度追蹤任務 #${taskId} 自動同步。${task["備註"] || ""}`,
+        "狀態": oldEvent && doneStatuses.includes(oldEvent["狀態"]) ? oldEvent["狀態"] : "待辦",
+        history: oldHistory.length ? oldHistory : [{time: new Date().toLocaleString("zh-TW"), type: "任務同步"}]
+      };
     }
     function save() { localStorage.setItem("highhand-calendar-events", JSON.stringify(events)); }
     function load() {
@@ -610,6 +656,26 @@
       item.history.push({time: new Date().toLocaleString("zh-TW"), type: status});
       save();
       render();
+    }
+    async function syncProgressTasks() {
+      try {
+        const response = await fetch("../progress/data/progress_data.json", {cache: "no-store"});
+        if (!response.ok) throw new Error(`讀取進度資料失敗：HTTP ${response.status}`);
+        const tasks = await response.json();
+        const manualEvents = events.filter(event => !String(event.id || "").startsWith("task-"));
+        const oldTaskEvents = new Map(events.filter(event => String(event.id || "").startsWith("task-")).map(event => [event.id, event]));
+        const taskEvents = tasks
+          .filter(shouldSyncTask)
+          .map(task => taskToEvent(task, oldTaskEvents.get(`task-${String(task["編號"] || "").trim()}`)));
+        events = migrate(manualEvents.concat(taskEvents));
+        events.sort((a, b) => `${a["日期"]} ${a["時間"]} ${a.id}`.localeCompare(`${b["日期"]} ${b["時間"]} ${b.id}`));
+        save();
+        setupFilters();
+        render();
+        alert(`已同步 ${taskEvents.length} 筆進度任務到行事曆。若要保存到雲端，請再按 GitHub同步 → 儲存到GitHub。`);
+      } catch (err) {
+        alert(err.message || String(err));
+      }
     }
     function openGithubSync() {
       const config = getGithubConfig();
