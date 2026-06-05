@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>行事曆排程</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #667085;
+      --line: #d8dee7;
+      --blue: #2266a5;
+      --green: #027a48;
+      --orange: #b54708;
+      --red: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Microsoft JhengHei", "Segoe UI", Arial, sans-serif;
+      font-size: 15px;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 18px;
+    }
+    .top {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+    h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
+    .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button, input, select, textarea {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+    }
+    button { min-height: 34px; padding: 0 10px; cursor: pointer; color: var(--ink); }
+    button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    button.good { background: var(--green); border-color: var(--green); color: #fff; }
+    button.warn { background: var(--orange); border-color: var(--orange); color: #fff; }
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 16px 18px 34px;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1.2fr repeat(4, minmax(130px, 180px));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    input, select { width: 100%; min-height: 36px; padding: 0 10px; }
+    textarea { width: 100%; min-height: 84px; padding: 10px; resize: vertical; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+      gap: 14px;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      background: #eef3f8;
+      border-bottom: 1px solid var(--line);
+    }
+    .section-title { font-weight: 700; }
+    .list { display: grid; gap: 0; }
+    .event {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .event:last-child { border-bottom: 0; }
+    .event.done { background: #f3faf6; color: #667085; }
+    .event.cancel { background: #f6f7f9; color: #667085; }
+    .event.overdue { box-shadow: inset 4px 0 0 var(--red); }
+    .event-main {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .event-title { font-weight: 700; line-height: 1.45; }
+    .event-date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .event-meta { color: var(--muted); font-size: 13px; line-height: 1.55; margin-top: 6px; }
+    .event-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      margin-right: 5px;
+      background: #fff;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .pill.todo { color: var(--blue); border-color: #a6c8e7; }
+    .pill.done { color: var(--green); border-color: #a6e7c7; }
+    .pill.cancel { color: #475467; border-color: #cfd4dc; }
+    .pill.type { color: var(--orange); border-color: #fed7aa; }
+    .empty { padding: 26px; text-align: center; color: var(--muted); }
+    dialog {
+      width: min(720px, calc(100vw - 24px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+    }
+    dialog::backdrop { background: rgba(15,23,42,.35); }
+    .modal-body { padding: 18px; }
+    .modal-title { font-weight: 700; font-size: 18px; margin-bottom: 8px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+    .field label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 5px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+    .sync-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 8px; }
+    #ghToken {
+      min-height: 76px;
+      font-family: Consolas, "Segoe UI", monospace;
+      -webkit-text-security: disc;
+      text-security: disc;
+    }
+    @media (max-width: 900px) {
+      .top { align-items: flex-start; flex-direction: column; }
+      .toolbar { grid-template-columns: 1fr; }
+      .layout { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      main, header { padding-left: 12px; padding-right: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <div>
+        <h1>行事曆排程</h1>
+        <div class="meta" id="meta">輕量版：今日待辦 + 未來 7 天週清單，不做重型月曆。</div>
+      </div>
+      <div class="actions">
+        <a href="../"><button>入口首頁</button></a>
+        <a href="../progress/"><button>進度追蹤</button></a>
+        <button onclick="openEvent()">新增事件</button>
+        <button onclick="openGithubSync()">GitHub同步</button>
+        <button onclick="exportCsv()">匯出CSV</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section class="toolbar">
+      <input id="q" placeholder="搜尋：案場、標題、對象、備註" oninput="render()">
+      <select id="project" onchange="render()"></select>
+      <select id="type" onchange="render()"></select>
+      <select id="status" onchange="render()"></select>
+      <select id="view" onchange="render()">
+        <option value="week">今日與未來7天</option>
+        <option value="today">只看今天</option>
+        <option value="overdue">逾期未完成</option>
+        <option value="all">全部</option>
+        <option value="done">完成/取消</option>
+      </select>
+    </section>
+    <section class="layout">
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">今日待辦</div>
+          <span class="pill todo" id="todayCount">0</span>
+        </div>
+        <div class="list" id="todayList"></div>
+      </div>
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">未來 7 天週清單</div>
+          <span class="pill todo" id="weekCount">0</span>
+        </div>
+        <div class="list" id="weekList"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="eventDialog">
+    <form method="dialog" class="modal-body">
+      <div class="modal-title" id="eventTitle">新增事件</div>
+      <div class="form-grid">
+        <div class="field"><label>案場</label><input id="eventProject"></div>
+        <div class="field"><label>類型</label><select id="eventType"></select></div>
+        <div class="field"><label>日期</label><input id="eventDate" type="date"></div>
+        <div class="field"><label>時間</label><input id="eventTime" type="time"></div>
+        <div class="field"><label>標題</label><input id="eventName"></div>
+        <div class="field"><label>對象/廠商</label><input id="eventParty"></div>
+        <div class="field"><label>地點</label><input id="eventPlace"></div>
+        <div class="field"><label>狀態</label><select id="eventStatus"></select></div>
+      </div>
+      <div class="field"><label>關聯任務</label><input id="eventTask"></div>
+      <div class="field" style="margin-top:12px;"><label>提醒</label><input id="eventReminder"></div>
+      <div class="field" style="margin-top:12px;"><label>備註</label><textarea id="eventNote"></textarea></div>
+      <div class="modal-actions">
+        <button value="cancel">取消</button>
+        <button class="primary" value="ok">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="githubDialog">
+    <form method="dialog" class="modal-body">
+      <div class="modal-title">GitHub同步</div>
+      <div class="small">Token 只存在此瀏覽器，不會寫進 HTML。</div>
+      <div class="form-grid">
+        <div class="field"><label>Repository</label><input id="ghRepo" placeholder="jammieaiwriter-jpg/highhand"></div>
+        <div class="field"><label>Branch</label><input id="ghBranch" placeholder="main"></div>
+        <div class="field"><label>資料路徑</label><input id="ghPath" placeholder="calendar/data/calendar_data.json"></div>
+        <div class="field">
+          <label>GitHub Token</label>
+          <textarea id="ghToken" placeholder="貼上 GitHub fine-grained token，需 Contents read/write"></textarea>
+          <div class="actions" style="margin-top:8px;">
+            <button type="button" onclick="pasteGithubToken()">貼上Token</button>
+            <button type="button" onclick="toggleGithubToken()">顯示/隱藏</button>
+            <button type="button" onclick="clearGithubToken()">清除Token</button>
+          </div>
+        </div>
+      </div>
+      <div class="sync-note" id="syncStatus">第一次設定後，此瀏覽器會記住 Token。</div>
+      <div class="modal-actions">
+        <button value="close">關閉</button>
+        <button type="button" onclick="saveGithubConfig()">儲存設定</button>
+        <button type="button" onclick="loadFromGithub()">從GitHub載入</button>
+        <button class="primary" type="button" onclick="saveToGithub()">儲存到GitHub</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const seedEvents = [{"id": "1", "案場": "93H", "日期": "2026-06-05", "時間": "", "類型": "進場", "標題": "塔吊/施工電梯基座切割完成度確認", "對象/廠商": "柏銘、協理、建麟", "地點": "工地", "關聯任務": "切割及運棄", "提醒": "確認完成度、磅單、收容證明、收善", "備註": "6/1進場，預計3~5工作天完成", "狀態": "待辦", "history": []}, {"id": "2", "案場": "93H", "日期": "2026-06-06", "時間": "", "類型": "安裝", "標題": "防火門收納框梯廳安裝確認", "對象/廠商": "新美/阿忠", "地點": "B2F/B1F 梯廳", "關聯任務": "防火門收納框(梯廳)", "提醒": "確認是否安裝完成並拍照", "備註": "", "狀態": "待辦", "history": []}, {"id": "3", "案場": "93H", "日期": "2026-07-31", "時間": "", "類型": "提醒", "標題": "確認四周開挖借地時間與備案", "對象/廠商": "工地", "地點": "", "關聯任務": "借地時間與不借地備案", "提醒": "確認10月中至12月中借地是否成立；若不借地，確認備案", "備註": "總經理5/13交辦，7月底提醒", "狀態": "待辦", "history": []}];
+    const eventTypes = ["會議", "提醒", "進場", "丈量", "安裝", "送簽", "回覆", "其他"];
+    const statuses = ["待辦", "進行中", "完成", "取消"];
+    let events = [];
+    let activeId = null;
+
+    function todayISO() { return new Date().toISOString().slice(0, 10); }
+    function addDays(base, days) {
+      const d = new Date(base + "T00:00:00");
+      d.setDate(d.getDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]));
+    }
+    function migrate(list) {
+      return list.map((event, i) => ({
+        id: String(event.id || i + 1),
+        "案場": event["案場"] || "93H",
+        "日期": event["日期"] || todayISO(),
+        "時間": event["時間"] || "",
+        "類型": event["類型"] || "提醒",
+        "標題": event["標題"] || "",
+        "對象/廠商": event["對象/廠商"] || "",
+        "地點": event["地點"] || "",
+        "關聯任務": event["關聯任務"] || "",
+        "提醒": event["提醒"] || "",
+        "備註": event["備註"] || "",
+        "狀態": statuses.includes(event["狀態"]) ? event["狀態"] : "待辦",
+        history: Array.isArray(event.history) ? event.history : []
+      }));
+    }
+    function save() { localStorage.setItem("highhand-calendar-events", JSON.stringify(events)); }
+    function load() {
+      const saved = localStorage.getItem("highhand-calendar-events");
+      events = migrate(saved ? JSON.parse(saved) : seedEvents);
+      save();
+      setupFilters();
+      render();
+    }
+    function setupFilters() {
+      const current = {
+        project: document.getElementById("project").value,
+        type: document.getElementById("type").value,
+        status: document.getElementById("status").value
+      };
+      const projects = [...new Set(events.map(x => x["案場"]).filter(Boolean))].sort();
+      document.getElementById("project").innerHTML = '<option value="">全部案場</option>' + projects.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("project").value = projects.includes(current.project) ? current.project : "";
+      document.getElementById("type").innerHTML = '<option value="">全部類型</option>' + eventTypes.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("type").value = eventTypes.includes(current.type) ? current.type : "";
+      document.getElementById("status").innerHTML = '<option value="">全部狀態</option>' + statuses.map(x => `<option>${escapeHtml(x)}</option>`).join("");
+      document.getElementById("status").value = statuses.includes(current.status) ? current.status : "";
+    }
+    function isDone(event) { return ["完成", "取消"].includes(event["狀態"]); }
+    function isOverdue(event) { return !isDone(event) && event["日期"] < todayISO(); }
+    function baseFiltered() {
+      const q = document.getElementById("q").value.trim().toLowerCase();
+      const project = document.getElementById("project").value;
+      const type = document.getElementById("type").value;
+      const status = document.getElementById("status").value;
+      const view = document.getElementById("view").value;
+      const today = todayISO();
+      const weekEnd = addDays(today, 7);
+      return events.filter(event => {
+        const hay = Object.values(event).join(" ").toLowerCase();
+        if (q && !hay.includes(q)) return false;
+        if (project && event["案場"] !== project) return false;
+        if (type && event["類型"] !== type) return false;
+        if (status && event["狀態"] !== status) return false;
+        if (view === "today" && event["日期"] !== today) return false;
+        if (view === "week" && (event["日期"] < today || event["日期"] > weekEnd || isDone(event))) return false;
+        if (view === "overdue" && !isOverdue(event)) return false;
+        if (view === "done" && !isDone(event)) return false;
+        return true;
+      }).sort((a, b) => `${a["日期"]} ${a["時間"]}`.localeCompare(`${b["日期"]} ${b["時間"]}`));
+    }
+    function render() {
+      const today = todayISO();
+      const weekEnd = addDays(today, 7);
+      const filtered = baseFiltered();
+      const todayItems = filtered.filter(x => x["日期"] === today && !isDone(x));
+      const weekItems = filtered.filter(x => x["日期"] >= today && x["日期"] <= weekEnd && !isDone(x));
+      document.getElementById("todayCount").textContent = todayItems.length;
+      document.getElementById("weekCount").textContent = weekItems.length;
+      document.getElementById("todayList").innerHTML = todayItems.length ? todayItems.map(renderEvent).join("") : `<div class="empty">今天沒有待辦</div>`;
+      document.getElementById("weekList").innerHTML = weekItems.length ? weekItems.map(renderEvent).join("") : `<div class="empty">未來 7 天沒有排程</div>`;
+      document.getElementById("meta").textContent = `共 ${events.length} 筆事件，最後載入 ${new Date().toLocaleString("zh-TW")}`;
+    }
+    function renderEvent(event) {
+      const cls = `${event["狀態"] === "完成" ? "done" : ""} ${event["狀態"] === "取消" ? "cancel" : ""} ${isOverdue(event) ? "overdue" : ""}`;
+      return `<article class="event ${cls}">
+        <div class="event-main">
+          <div>
+            <div class="event-title">${escapeHtml(event["標題"])}</div>
+            <div class="event-meta">
+              <span class="pill type">${escapeHtml(event["類型"])}</span>
+              <span class="pill ${event["狀態"] === "完成" ? "done" : event["狀態"] === "取消" ? "cancel" : "todo"}">${escapeHtml(event["狀態"])}</span>
+              ${escapeHtml(event["案場"])}｜${escapeHtml(event["對象/廠商"])}｜${escapeHtml(event["地點"])}
+            </div>
+            <div class="event-meta">${escapeHtml(event["提醒"] || event["備註"] || "")}</div>
+          </div>
+          <div class="event-date">${escapeHtml(event["日期"])} ${escapeHtml(event["時間"])}</div>
+        </div>
+        <div class="event-actions">
+          <button class="good" onclick="setStatus('${event.id}', '完成')">完成</button>
+          <button class="warn" onclick="openEvent('${event.id}')">編輯</button>
+          <button onclick="setStatus('${event.id}', '取消')">取消</button>
+        </div>
+      </article>`;
+    }
+    function nextId() { return String(Math.max(0, ...events.map(x => Number(x.id) || 0)) + 1); }
+    function populateSelect(id, options, selected) {
+      document.getElementById(id).innerHTML = options.map(x => `<option ${x === selected ? "selected" : ""}>${escapeHtml(x)}</option>`).join("");
+    }
+    function openEvent(id) {
+      activeId = id || null;
+      const event = id ? events.find(x => x.id === id) : null;
+      document.getElementById("eventTitle").textContent = id ? `編輯事件 #${id}` : "新增事件";
+      document.getElementById("eventProject").value = event?.["案場"] || "93H";
+      populateSelect("eventType", eventTypes, event?.["類型"] || "提醒");
+      document.getElementById("eventDate").value = event?.["日期"] || todayISO();
+      document.getElementById("eventTime").value = event?.["時間"] || "";
+      document.getElementById("eventName").value = event?.["標題"] || "";
+      document.getElementById("eventParty").value = event?.["對象/廠商"] || "";
+      document.getElementById("eventPlace").value = event?.["地點"] || "";
+      populateSelect("eventStatus", statuses, event?.["狀態"] || "待辦");
+      document.getElementById("eventTask").value = event?.["關聯任務"] || "";
+      document.getElementById("eventReminder").value = event?.["提醒"] || "";
+      document.getElementById("eventNote").value = event?.["備註"] || "";
+      document.getElementById("eventDialog").showModal();
+    }
+    document.getElementById("eventDialog").addEventListener("close", event => {
+      if (event.target.returnValue !== "ok") return;
+      let item = activeId ? events.find(x => x.id === activeId) : null;
+      if (!item) {
+        item = {id: nextId(), history: []};
+        events.push(item);
+      }
+      Object.assign(item, {
+        "案場": document.getElementById("eventProject").value.trim() || "93H",
+        "日期": document.getElementById("eventDate").value || todayISO(),
+        "時間": document.getElementById("eventTime").value,
+        "類型": document.getElementById("eventType").value,
+        "標題": document.getElementById("eventName").value.trim(),
+        "對象/廠商": document.getElementById("eventParty").value.trim(),
+        "地點": document.getElementById("eventPlace").value.trim(),
+        "關聯任務": document.getElementById("eventTask").value.trim(),
+        "提醒": document.getElementById("eventReminder").value.trim(),
+        "備註": document.getElementById("eventNote").value.trim(),
+        "狀態": document.getElementById("eventStatus").value
+      });
+      item.history = item.history || [];
+      item.history.push({time: new Date().toLocaleString("zh-TW"), type: activeId ? "編輯" : "新增"});
+      save();
+      setupFilters();
+      render();
+      activeId = null;
+    });
+    function setStatus(id, status) {
+      const item = events.find(x => x.id === id);
+      if (!item) return;
+      item["狀態"] = status;
+      item.history = item.history || [];
+      item.history.push({time: new Date().toLocaleString("zh-TW"), type: status});
+      save();
+      render();
+    }
+    function openGithubSync() {
+      const config = getGithubConfig();
+      document.getElementById("ghRepo").value = config.repo || "jammieaiwriter-jpg/highhand";
+      document.getElementById("ghBranch").value = config.branch || "main";
+      document.getElementById("ghPath").value = config.path || "calendar/data/calendar_data.json";
+      document.getElementById("ghToken").value = config.token || "";
+      document.getElementById("syncStatus").textContent = config.repo ? `目前設定：${config.repo} / ${config.path || "calendar/data/calendar_data.json"}` : "尚未設定 GitHub repo。";
+      document.getElementById("githubDialog").showModal();
+    }
+    function getGithubConfig() {
+      try { return JSON.parse(localStorage.getItem("highhand-calendar-github-config") || "{}"); }
+      catch { return {}; }
+    }
+    function saveGithubConfig() {
+      const config = {
+        repo: document.getElementById("ghRepo").value.trim() || "jammieaiwriter-jpg/highhand",
+        branch: document.getElementById("ghBranch").value.trim() || "main",
+        path: document.getElementById("ghPath").value.trim() || "calendar/data/calendar_data.json",
+        token: document.getElementById("ghToken").value.trim()
+      };
+      localStorage.setItem("highhand-calendar-github-config", JSON.stringify(config));
+      document.getElementById("syncStatus").textContent = "設定已儲存。";
+    }
+    async function pasteGithubToken() {
+      try {
+        document.getElementById("ghToken").value = (await navigator.clipboard.readText()).trim();
+        document.getElementById("syncStatus").textContent = "Token 已從剪貼簿貼上。";
+      } catch {
+        document.getElementById("syncStatus").textContent = "無法自動讀取剪貼簿，請手動貼上。";
+      }
+    }
+    function toggleGithubToken() {
+      const field = document.getElementById("ghToken");
+      field.style.webkitTextSecurity = field.style.webkitTextSecurity === "disc" ? "none" : "disc";
+      field.style.textSecurity = field.style.textSecurity === "disc" ? "none" : "disc";
+    }
+    function clearGithubToken() {
+      const config = getGithubConfig();
+      config.token = "";
+      localStorage.setItem("highhand-calendar-github-config", JSON.stringify(config));
+      document.getElementById("ghToken").value = "";
+      document.getElementById("syncStatus").textContent = "Token 已清除。";
+    }
+    function utf8ToBase64(text) {
+      const bytes = new TextEncoder().encode(text);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(binary);
+    }
+    function base64ToUtf8(base64) {
+      const binary = atob(base64.replace(/\s/g, ""));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
+    async function githubFetch(config, method, body) {
+      if (!config.repo || !config.path || !config.token) throw new Error("請先填 Repository、資料路徑與 Token。");
+      const url = `https://api.github.com/repos/${config.repo}/contents/${encodeURIComponent(config.path).replace(/%2F/g, "/")}`;
+      const finalUrl = method === "GET" ? `${url}?ref=${encodeURIComponent(config.branch || "main")}` : url;
+      const res = await fetch(finalUrl, {
+        method,
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "Authorization": `Bearer ${config.token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(body ? {"Content-Type": "application/json"} : {})
+        },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        const error = new Error(`GitHub ${res.status}: ${text.slice(0, 220)}`);
+        error.status = res.status;
+        throw error;
+      }
+      return res.json();
+    }
+    async function loadFromGithub() {
+      saveGithubConfig();
+      const config = getGithubConfig();
+      document.getElementById("syncStatus").textContent = "從 GitHub 載入中...";
+      try {
+        const file = await githubFetch(config, "GET");
+        events = migrate(JSON.parse(base64ToUtf8(file.content)));
+        save();
+        setupFilters();
+        render();
+        document.getElementById("syncStatus").textContent = `已從 GitHub 載入 ${events.length} 筆。`;
+      } catch (err) {
+        document.getElementById("syncStatus").textContent = err.message;
+      }
+    }
+    async function saveToGithub() {
+      saveGithubConfig();
+      const config = getGithubConfig();
+      document.getElementById("syncStatus").textContent = "儲存到 GitHub 中...";
+      try {
+        let sha = null;
+        try { sha = (await githubFetch(config, "GET")).sha; }
+        catch (err) { if (err.status !== 404) throw err; }
+        await githubFetch(config, "PUT", {
+          message: `Update calendar data ${new Date().toLocaleString("zh-TW")}`,
+          content: utf8ToBase64(JSON.stringify(events, null, 2)),
+          branch: config.branch || "main",
+          ...(sha ? {sha} : {})
+        });
+        document.getElementById("syncStatus").textContent = `已儲存 ${events.length} 筆到 GitHub。`;
+      } catch (err) {
+        document.getElementById("syncStatus").textContent = err.message;
+      }
+    }
+    function exportCsv() {
+      const rows = baseFiltered();
+      const keys = ["id","案場","日期","時間","類型","標題","對象/廠商","地點","關聯任務","提醒","備註","狀態"];
+      const csv = [keys.join(",")].concat(rows.map(row => keys.map(k => `"${String(row[k] ?? "").replace(/"/g, '""')}"`).join(","))).join("\n");
+      const blob = new Blob(["\ufeff" + csv], {type: "text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Highhand行事曆排程.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    load();
+  </script>
+</body>
+</html>
