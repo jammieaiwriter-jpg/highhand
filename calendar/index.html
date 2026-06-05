@@ -71,6 +71,88 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
       gap: 14px;
     }
+    .calendar-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .calendar-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      background: #eef3f8;
+      border-bottom: 1px solid var(--line);
+    }
+    .calendar-title {
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      border-top: 0;
+    }
+    .weekday {
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: #fafbfc;
+    }
+    .weekday:nth-child(7n) { border-right: 0; }
+    .day {
+      min-height: 112px;
+      padding: 8px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .day:nth-child(7n) { border-right: 0; }
+    .day.outside { background: #f8fafc; color: #98a2b3; }
+    .day.today { box-shadow: inset 0 0 0 2px #80b7e7; }
+    .day.selected { background: #eef6ff; }
+    .day.overdue { box-shadow: inset 4px 0 0 var(--red); }
+    .day-num {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .day-count {
+      color: var(--blue);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .day-event {
+      display: block;
+      font-size: 12px;
+      line-height: 1.35;
+      padding: 3px 5px;
+      border-radius: 4px;
+      background: #f0f7ff;
+      color: #184e77;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .day-event.done {
+      background: #f3faf6;
+      color: #027a48;
+    }
+    .day-more {
+      color: var(--muted);
+      font-size: 12px;
+    }
     .section {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -145,6 +227,12 @@
       .top { align-items: flex-start; flex-direction: column; }
       .toolbar { grid-template-columns: 1fr; }
       .layout { grid-template-columns: 1fr; }
+      .calendar-grid { grid-template-columns: 1fr; }
+      .weekday { display: none; }
+      .day {
+        min-height: auto;
+        border-right: 0;
+      }
       .form-grid { grid-template-columns: 1fr; }
       main, header { padding-left: 12px; padding-right: 12px; }
     }
@@ -180,10 +268,24 @@
         <option value="done">完成/取消</option>
       </select>
     </section>
+    <section class="calendar-panel">
+      <div class="calendar-head">
+        <div class="actions">
+          <button onclick="changeMonth(-1)">上個月</button>
+          <button onclick="goToday()">今天</button>
+          <button onclick="changeMonth(1)">下個月</button>
+        </div>
+        <div class="calendar-title" id="monthTitle">月份</div>
+        <div class="actions">
+          <button class="primary" onclick="openEvent(null, selectedDate)">新增選取日事件</button>
+        </div>
+      </div>
+      <div class="calendar-grid" id="calendarGrid"></div>
+    </section>
     <section class="layout">
       <div class="section">
         <div class="section-head">
-          <div class="section-title">今日待辦</div>
+          <div class="section-title" id="todaySectionTitle">今日待辦</div>
           <span class="pill todo" id="todayCount">0</span>
         </div>
         <div class="list" id="todayList"></div>
@@ -255,12 +357,23 @@
     const statuses = ["待辦", "進行中", "完成", "取消"];
     let events = [];
     let activeId = null;
+    let calendarMonth = todayISO().slice(0, 7);
+    let selectedDate = todayISO();
 
     function todayISO() { return new Date().toISOString().slice(0, 10); }
     function addDays(base, days) {
       const d = new Date(base + "T00:00:00");
       d.setDate(d.getDate() + days);
       return d.toISOString().slice(0, 10);
+    }
+    function monthAdd(monthText, delta) {
+      const d = new Date(monthText + "-01T00:00:00");
+      d.setMonth(d.getMonth() + delta);
+      return d.toISOString().slice(0, 7);
+    }
+    function monthLabel(monthText) {
+      const [year, month] = monthText.split("-");
+      return `${year} 年 ${Number(month)} 月`;
     }
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]));
@@ -333,11 +446,80 @@
       const filtered = baseFiltered();
       const todayItems = filtered.filter(x => x["日期"] === today && !isDone(x));
       const weekItems = filtered.filter(x => x["日期"] >= today && x["日期"] <= weekEnd && !isDone(x));
+      renderCalendar();
+      document.getElementById("todaySectionTitle").textContent = "今日待辦";
       document.getElementById("todayCount").textContent = todayItems.length;
       document.getElementById("weekCount").textContent = weekItems.length;
       document.getElementById("todayList").innerHTML = todayItems.length ? todayItems.map(renderEvent).join("") : `<div class="empty">今天沒有待辦</div>`;
       document.getElementById("weekList").innerHTML = weekItems.length ? weekItems.map(renderEvent).join("") : `<div class="empty">未來 7 天沒有排程</div>`;
       document.getElementById("meta").textContent = `共 ${events.length} 筆事件，最後載入 ${new Date().toLocaleString("zh-TW")}`;
+    }
+    function renderCalendar() {
+      document.getElementById("monthTitle").textContent = monthLabel(calendarMonth);
+      const [year, month] = calendarMonth.split("-").map(Number);
+      const first = new Date(year, month - 1, 1);
+      const start = new Date(first);
+      start.setDate(first.getDate() - first.getDay());
+      const dayNames = ["日", "一", "二", "三", "四", "五", "六"];
+      const cells = dayNames.map(name => `<div class="weekday">${name}</div>`);
+      const q = document.getElementById("q").value.trim().toLowerCase();
+      const project = document.getElementById("project").value;
+      const type = document.getElementById("type").value;
+      const status = document.getElementById("status").value;
+      for (let i = 0; i < 42; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        const iso = d.toISOString().slice(0, 10);
+        const inMonth = iso.slice(0, 7) === calendarMonth;
+        const dayEvents = events.filter(event => {
+          if (event["日期"] !== iso) return false;
+          const hay = Object.values(event).join(" ").toLowerCase();
+          if (q && !hay.includes(q)) return false;
+          if (project && event["案場"] !== project) return false;
+          if (type && event["類型"] !== type) return false;
+          if (status && event["狀態"] !== status) return false;
+          return true;
+        }).sort((a, b) => `${a["時間"]} ${a["標題"]}`.localeCompare(`${b["時間"]} ${b["標題"]}`));
+        const openEvents = dayEvents.filter(event => !isDone(event));
+        const classes = [
+          "day",
+          inMonth ? "" : "outside",
+          iso === todayISO() ? "today" : "",
+          iso === selectedDate ? "selected" : "",
+          openEvents.some(event => isOverdue(event)) ? "overdue" : ""
+        ].filter(Boolean).join(" ");
+        const visible = dayEvents.slice(0, 3).map(event =>
+          `<span class="day-event ${isDone(event) ? "done" : ""}">${escapeHtml((event["時間"] ? event["時間"] + " " : "") + event["標題"])}</span>`
+        ).join("");
+        cells.push(`<div class="${classes}" onclick="selectDate('${iso}')">
+          <div class="day-num"><span>${d.getDate()}</span>${dayEvents.length ? `<span class="day-count">${dayEvents.length}件</span>` : ""}</div>
+          ${visible}
+          ${dayEvents.length > 3 ? `<div class="day-more">+${dayEvents.length - 3} 更多</div>` : ""}
+        </div>`);
+      }
+      document.getElementById("calendarGrid").innerHTML = cells.join("");
+    }
+    function selectDate(dateText) {
+      selectedDate = dateText;
+      calendarMonth = dateText.slice(0, 7);
+      document.getElementById("view").value = "all";
+      document.getElementById("q").value = "";
+      render();
+      const items = events
+        .filter(event => event["日期"] === dateText)
+        .sort((a, b) => `${a["時間"]} ${a["標題"]}`.localeCompare(`${b["時間"]} ${b["標題"]}`));
+      document.getElementById("todayList").innerHTML = items.length ? items.map(renderEvent).join("") : `<div class="empty">${dateText} 沒有事件</div>`;
+      document.getElementById("todayCount").textContent = items.length;
+      document.getElementById("todaySectionTitle").textContent = `${dateText} 事件`;
+    }
+    function changeMonth(delta) {
+      calendarMonth = monthAdd(calendarMonth, delta);
+      renderCalendar();
+    }
+    function goToday() {
+      selectedDate = todayISO();
+      calendarMonth = selectedDate.slice(0, 7);
+      render();
     }
     function renderEvent(event) {
       const cls = `${event["狀態"] === "完成" ? "done" : ""} ${event["狀態"] === "取消" ? "cancel" : ""} ${isOverdue(event) ? "overdue" : ""}`;
@@ -365,13 +547,13 @@
     function populateSelect(id, options, selected) {
       document.getElementById(id).innerHTML = options.map(x => `<option ${x === selected ? "selected" : ""}>${escapeHtml(x)}</option>`).join("");
     }
-    function openEvent(id) {
+    function openEvent(id, presetDate) {
       activeId = id || null;
       const event = id ? events.find(x => x.id === id) : null;
       document.getElementById("eventTitle").textContent = id ? `編輯事件 #${id}` : "新增事件";
       document.getElementById("eventProject").value = event?.["案場"] || "93H";
       populateSelect("eventType", eventTypes, event?.["類型"] || "提醒");
-      document.getElementById("eventDate").value = event?.["日期"] || todayISO();
+      document.getElementById("eventDate").value = event?.["日期"] || presetDate || selectedDate || todayISO();
       document.getElementById("eventTime").value = event?.["時間"] || "";
       document.getElementById("eventName").value = event?.["標題"] || "";
       document.getElementById("eventParty").value = event?.["對象/廠商"] || "";
