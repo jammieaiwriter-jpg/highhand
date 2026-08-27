@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>93H 進度儀表板</title>
+<style>
+:root { --red:#c0392b; --orange:#d68910; --blue:#2471a3; --green:#1e8449; --gray:#707b7c; }
+* { box-sizing:border-box; }
+body { font-family:"Microsoft JhengHei","PingFang TC",sans-serif; margin:0; background:#f4f6f7; color:#212f3c; }
+header { background:#1a3c6e; color:#fff; padding:14px 20px; }
+header h1 { margin:0; font-size:1.3em; }
+header .sub { font-size:.85em; opacity:.85; margin-top:4px; }
+.wrap { max-width:1100px; margin:0 auto; padding:12px; }
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin:12px 0; }
+.kpi { background:#fff; border-radius:10px; padding:12px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+.kpi .num { font-size:1.9em; font-weight:700; }
+.kpi .lbl { font-size:.82em; color:#555; }
+.k-red .num { color:var(--red); } .k-orange .num { color:var(--orange); }
+.k-blue .num { color:var(--blue); } .k-green .num { color:var(--green); } .k-star .num { color:#8e44ad; }
+.msbar { display:flex; gap:8px; overflow-x:auto; padding:4px 0 10px; }
+.ms { min-width:150px; background:#fff; border-radius:10px; padding:10px; border-top:4px solid var(--gray); box-shadow:0 1px 3px rgba(0,0,0,.1); flex:1; }
+.ms-hot { border-top-color:var(--orange); } .ms-past { border-top-color:var(--red); } .ms-ok { border-top-color:var(--green); }
+.ms-date { font-weight:700; font-size:.9em; }
+.ms-name { font-size:.85em; margin:4px 0; }
+.ms-cd { font-size:.8em; font-weight:700; color:var(--blue); }
+.ms-note { font-size:.72em; color:#777; margin-top:3px; }
+.sec { background:#fff; border-radius:10px; margin:12px 0; box-shadow:0 1px 3px rgba(0,0,0,.1); overflow:hidden; }
+.sec summary { cursor:pointer; padding:12px 14px; font-weight:700; font-size:1.02em; background:#eaf0f6; }
+.sec .cnt { background:#1a3c6e; color:#fff; border-radius:10px; padding:1px 9px; font-size:.8em; margin-left:8px; }
+table { width:100%; border-collapse:collapse; font-size:.88em; }
+th { background:#f2f4f4; text-align:left; padding:7px 9px; border-bottom:2px solid #d5dbdb; white-space:nowrap; }
+td { padding:7px 9px; border-bottom:1px solid #eaeded; vertical-align:top; }
+td.cat { white-space:nowrap; color:#555; }
+td.note { color:#666; font-size:.92em; }
+.badge { display:inline-block; border-radius:6px; padding:2px 8px; font-size:.85em; white-space:nowrap; color:#fff; }
+.b-red { background:var(--red); } .b-orange { background:var(--orange); }
+.b-blue { background:var(--blue); } .b-green { background:var(--green); } .b-gray { background:var(--gray); }
+.permit summary { background:#fdf2d0; }
+footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
+@media print { .sec { break-inside:avoid; } }
+</style></head><body>
+<header><h1>93H 海興段 進度儀表板</h1>
+<div class="sub">產出：115/8/27（2026-08-27）｜資料：93H進度盤點_1150826.xlsx｜距取得使照 <b>141 天</b></div>
+</header>
+<div class="wrap">
+<div class="kpis">
+<div class="kpi k-red"><div class="num">3</div><div class="lbl">已過預定日</div></div>
+<div class="kpi k-orange"><div class="num">13</div><div class="lbl">兩週內到期</div></div>
+<div class="kpi k-blue"><div class="num">7</div><div class="lbl">已可施作待排</div></div>
+<div class="kpi k-star"><div class="num">12</div><div class="lbl">使照前重點未完成</div></div>
+<div class="kpi k-green"><div class="num">16/100</div><div class="lbl">已完成</div></div>
+</div>
+<div class="msbar"><div class="ms ms-ok"><div class="ms-date">115/9/30</div><div class="ms-name">1F門禁完成(玻璃/新美門/鐵捲門/防火門)</div><div class="ms-cd">剩34天</div></div><div class="ms ms-ok"><div class="ms-date">115/10/1</div><div class="ms-name">拆圍籬、景觀開挖</div><div class="ms-cd">剩35天</div><div class="ms-note">借地10/1~116/2/28已定</div></div><div class="ms ms-ok"><div class="ms-date">115/11/10</div><div class="ms-name">2F~1F外牆拆架完成</div><div class="ms-cd">剩75天</div><div class="ms-note">目標提前回10月底，待2F~7F清潔後調整</div></div><div class="ms ms-ok"><div class="ms-date">115/11/10</div><div class="ms-name">消防檢查開始</div><div class="ms-cd">剩75天</div><div class="ms-note">前置：電力變更9/4→消防變更9/15~10/15</div></div><div class="ms ms-ok"><div class="ms-date">115/11/15</div><div class="ms-name">無障礙掛件</div><div class="ms-cd">剩80天</div></div><div class="ms ms-ok"><div class="ms-date">115/12/5</div><div class="ms-name">無障礙、使管處看現場</div><div class="ms-cd">剩100天</div><div class="ms-note">使照取得前送資料即可</div></div><div class="ms ms-ok"><div class="ms-date">116/1/15</div><div class="ms-name">取得使用執照</div><div class="ms-cd">剩141天</div></div></div>
+<details open class="sec" id="overdue"><summary>🔴 已過預定日（需重排或確認）<span class="cnt">3</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">燈具</td><td>B2~14F</td><td>梯廳廊道燈(天花板)安裝</td><td><span class="badge b-red">已過預定日｜115/8/11（逾16天）</span></td><td class='note'>油漆後安裝</td></tr>
+<tr><td class="cat">燈具</td><td>B2~14F</td><td>梯廳廊道燈(天花板)挖孔</td><td><span class="badge b-red">已過預定日｜115/8/26（逾1天）</span></td><td class='note'></td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>車道柱燈</td><td><span class="badge b-red">已過預定日｜115/8/26（逾1天）</span></td><td class='note'>延8/13再延8/21</td></tr></table></details>
+<details open class="sec" id="soon"><summary>🟠 兩週內到期<span class="cnt">13</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐格柵A1.A2.A3.A5</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐冷氣架A1.A2</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐冷氣架A3.A5</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>2F~14F A1客廁檯面</td><td><span class="badge b-orange">兩週內到期｜115/8/30（3天後）</span></td><td class='note'>浴櫃完成(確定尺寸後)</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>2F~14F A2客廁檯面</td><td><span class="badge b-orange">兩週內到期｜115/8/30（3天後）</span></td><td class='note'>浴櫃完成(確定尺寸後)</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>2F~14F A3客廁檯面</td><td><span class="badge b-orange">兩週內到期｜115/8/30（3天後）</span></td><td class='note'>浴櫃完成(確定尺寸後)</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>2F~14F A5客廁檯面</td><td><span class="badge b-orange">兩週內到期｜115/8/30（3天後）</span></td><td class='note'>浴櫃完成(確定尺寸後)</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/樓梯扶手</td><td>⭐甲梯樓梯扶手(無障礙B2F~R3F)</td><td><span class="badge b-orange">兩週內到期｜115/8/31（4天後）</span></td><td class='note'>新美外包商</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/樓梯扶手</td><td>⭐乙梯樓梯扶手(一般梯1F~14F)</td><td><span class="badge b-orange">兩週內到期｜115/8/31（4天後）</span></td><td class='note'>新美外包商</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F 店鋪地坪</td><td><span class="badge b-orange">兩週內到期｜115/9/1（5天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F、MF S1店鋪樓梯</td><td><span class="badge b-orange">兩週內到期｜115/9/1（5天後）</span></td><td class='note'>完成後新美丈量扶手</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F、MF S2店鋪樓梯</td><td><span class="badge b-orange">兩週內到期｜115/9/1（5天後）</span></td><td class='note'>完成後新美丈量扶手</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>2F~14F 無障礙異材質警示帶</td><td><span class="badge b-orange">兩週內到期｜115/9/1（5天後）</span></td><td class='note'>刻溝止滑的部分由阿賓贊助</td></tr></table></details>
+<details open class="sec" id="ready"><summary>🔵 前置已完成，可施作待排程<span class="cnt">7</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">燈具</td><td>RF</td><td>屋突照樑投射燈</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>RF</td><td>屋突照明</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>14F</td><td>14F天花板線燈-加裝L片</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>2~14F</td><td>建築外線形燈(丁掛磚黑、塗料白)</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>2F</td><td>露臺照明私控</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>MF</td><td>露臺照明</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>目前已可安裝</td></tr>
+<tr><td class="cat">燈具</td><td>MF</td><td>店鋪夾層燈(天花板)</td><td><span class="badge b-blue">已可施作待排</span></td><td class='note'>天花板完成後(已放線)</td></tr></table></details>
+<details open class="sec permit"><summary>⭐ 使照前重點（未完成）<span class="cnt">12</span></summary>
+<table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐格柵A1.A2.A3.A5</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐冷氣架A1.A2</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/2F~14F</td><td>⭐冷氣架A3.A5</td><td><span class="badge b-orange">兩週內到期｜115/8/28（1天後）</span></td><td class='note'>8F以下</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/樓梯扶手</td><td>⭐甲梯樓梯扶手(無障礙B2F~R3F)</td><td><span class="badge b-orange">兩週內到期｜115/8/31（4天後）</span></td><td class='note'>新美外包商</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/樓梯扶手</td><td>⭐乙梯樓梯扶手(一般梯1F~14F)</td><td><span class="badge b-orange">兩週內到期｜115/8/31（4天後）</span></td><td class='note'>新美外包商</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/1F</td><td>⭐機車區格柵</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>石材.二丁後</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/樓梯扶手</td><td>⭐公設樓梯扶手(無障礙1F~MF)</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>樓梯石材後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/樓梯扶手</td><td>⭐店鋪樓梯扶手(一般梯1F~MF)</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>樓梯石材後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/B1F</td><td>⭐車道截水溝*2</td><td><span class="badge b-gray">已排程｜115/12/15（110天後）</span></td><td class='note'>車道防水後安裝</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>⭐1F 無障礙廁所門內滾邊</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/MF</td><td>⭐冷氣格柵*2(店鋪)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>石蓋板後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/MF</td><td>⭐欄杆(店鋪.露臺)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>石蓋板後丈量</td></tr></table></details>
+<details open class="sec" id="doing"><summary>🟢 施作中<span class="cnt">3</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">石材</td><td>待進場安裝</td><td>B2F、B1F、2F~14F 電梯框壁面</td><td><span class="badge b-green">施作中</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>2F~14F 各戶玄關門框</td><td><span class="badge b-green">施作中</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F D08門檻</td><td><span class="badge b-green">施作中</span></td><td class='note'></td></tr></table></details>
+<details open class="sec" id="later"><summary>📅 已排程（未來）<span class="cnt">26</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">鐵件</td><td>待進場安裝/1F</td><td>⭐機車區格柵</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>石材.二丁後</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/樓梯扶手</td><td>⭐公設樓梯扶手(無障礙1F~MF)</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>樓梯石材後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/樓梯扶手</td><td>⭐店鋪樓梯扶手(一般梯1F~MF)</td><td><span class="badge b-gray">已排程｜115/10/30（64天後）</span></td><td class='note'>樓梯石材後丈量</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F外圍石階</td><td><span class="badge b-gray">已排程｜115/11/15（80天後）</span></td><td class='note'>拆架後量</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F水池墩</td><td><span class="badge b-gray">已排程｜115/12/15（110天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F花台蓋板</td><td><span class="badge b-gray">已排程｜115/12/15（110天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/B1F</td><td>⭐車道截水溝*2</td><td><span class="badge b-gray">已排程｜115/12/15（110天後）</span></td><td class='note'>車道防水後安裝</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>B2F 停車場往梯廳入口地坪</td><td><span class="badge b-gray">已排程｜115/12/30（125天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>B1F 停車場往梯廳入口地坪</td><td><span class="badge b-gray">已排程｜115/12/30（125天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>B1F 停車場往梯廳入口牆面</td><td><span class="badge b-gray">已排程｜115/12/30（125天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F消防送水口基座上蓋</td><td><span class="badge b-gray">已排程｜116/2/28（185天後）</span></td><td class='note'>等送水口基座完成</td></tr>
+<tr><td class="cat">磁磚</td><td>60x60</td><td>SK60201M(水池)</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">磁磚</td><td>22.5x45/22.5</td><td>人行-伯朗石咖啡色9mm</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">磁磚</td><td>22.5x45/22.5</td><td>車行-伯朗石咖啡色14mm</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">磁磚</td><td>10x10</td><td>萬字型k1803(線條-淺)</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">磁磚</td><td>10x10</td><td>萬字型k1803(車道-深)</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'></td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/1F</td><td>大廳出入口感應磁扣基座*1</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'>石材地板後</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/MF</td><td>機車停車區採光罩(二工)</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'>石蓋板後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/2F~4F</td><td>2F採光罩(二工)</td><td><span class="badge b-gray">已排程｜116/3/30（215天後）</span></td><td class='note'>拆三角架後丈量/二工安裝</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/1F</td><td>機車區格柵自動門</td><td><span class="badge b-gray">已排程｜116/4/30（246天後）</span></td><td class='note'>地磚後丈量+預埋+安裝</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/1F</td><td>環保室自動門*1</td><td><span class="badge b-gray">已排程｜116/4/30（246天後）</span></td><td class='note'>環保室貼磚後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/MF</td><td>公設冷氣室外機格柵(二工)</td><td><span class="badge b-gray">已排程｜116/4/30（246天後）</span></td><td class='note'>冷氣後</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/R1F~R3F</td><td>曬衣架+採光罩+格柵(二工)</td><td><span class="badge b-gray">已排程｜116/4/30（246天後）</span></td><td class='note'>116/03/01</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/R1F~R3F</td><td>R1F冷氣格柵(二工)</td><td><span class="badge b-gray">已排程｜116/4/30（246天後）</span></td><td class='note'>冷氣後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/B2F</td><td>排風機:格柵護欄*1</td><td><span class="badge b-gray">已排程｜116/5/1（247天後）</span></td><td class='note'>EPOXY後</td></tr>
+<tr><td class="cat">鐵件</td><td>待丈量/B1F</td><td>排風機:格柵護欄*2</td><td><span class="badge b-gray">已排程｜116/5/1（247天後）</span></td><td class='note'>EPOXY後安裝</td></tr></table></details>
+<details open class="sec" id="waiting"><summary>⏳ 等前置條件<span class="cnt">32</span></summary><table><tr><th>類別</th><th>位置</th><th>項目</th><th>狀態</th><th>備註/前置</th></tr><tr><td class="cat">燈具</td><td>外牆</td><td>建築外柱燈2F</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架後10月底</td></tr>
+<tr><td class="cat">燈具</td><td>B2~RF</td><td>安全梯蛋糕燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>油漆清潔後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>車道指引燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架後10月底</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>車道入口紅綠燈線燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架前</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>車道限高燈帶</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>格柵後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>車道吸頂燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>油漆清潔後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>機車停車場吸頂燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>塗料後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>機車停車場壁燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>塗料後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>建築外柱造型壁燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>基座柱投射燈(含大門柱)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>大門口大小崁燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架前</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>店鋪橫招</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>拆架後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>店鋪立招</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>景觀後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>景觀照樹燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>景觀後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>景觀步道燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>景觀後</td></tr>
+<tr><td class="cat">燈具</td><td>1F</td><td>景觀花台燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>景觀後</td></tr>
+<tr><td class="cat">燈具</td><td>地下室</td><td>車道T8</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>油漆清潔後</td></tr>
+<tr><td class="cat">燈具</td><td>地下室</td><td>停車區T8</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>油漆清潔後</td></tr>
+<tr><td class="cat">燈具</td><td>地下室</td><td>儲藏室.電機室.機房等吸頂燈</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>油漆清潔後</td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F 公廁洗手台面旁窗框</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F 店鋪廁所門框</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>⭐1F 無障礙廁所門內滾邊</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>1F 店鋪廁所門檻</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>R1F 排煙窗台度面蓋</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">石材</td><td>待進場安裝</td><td>2F~14F 玄關門檻</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>地磚完成後</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F公廁洗手檯面</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>壁磚完成，打板完成(怡君)</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>1F店鋪S1,S2洗手台檯面</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>壁磚完成，打板完成(怡君)</td></tr>
+<tr><td class="cat">石材</td><td>待丈量</td><td>R1F對外門斜坡</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>露臺地磚完成後</td></tr>
+<tr><td class="cat">磁磚</td><td>120x280</td><td>義大利羽裳金.亮面(櫃台背牆)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">磁磚</td><td></td><td>把手薄板</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'></td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/MF</td><td>⭐冷氣格柵*2(店鋪)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>石蓋板後丈量</td></tr>
+<tr><td class="cat">鐵件</td><td>待進場安裝/MF</td><td>⭐欄杆(店鋪.露臺)</td><td><span class="badge b-gray">等前置條件</span></td><td class='note'>石蓋板後丈量</td></tr></table></details>
+<details class="sec"><summary>📋 發包與工作事項<span class="cnt">19</span></summary>
+<table><tr><th>區/類</th><th>事項</th><th>現況</th><th>下一步</th></tr><tr><td class='cat'>海興段</td><td>機車格噴砂 500/格*(68-4)格 約3.5萬</td><td class='note'>送加工約2周</td><td class='note'>待勁揚正式報價、提供字體</td></tr><tr><td class='cat'>海興段</td><td>3A1、13A3 裝潢(暫緩)</td><td class='note'>圖、報價工地已審閱</td><td class='note'>待公司內部審閱確認，預計8個月安排來公司開會</td></tr><tr><td class='cat'>海興段</td><td>MF S1天花板改秉宏施作</td><td class='note'>原皇欽改秉宏</td><td class='note'>秉宏報價</td></tr><tr><td class='cat'>海興段</td><td>潑水劑第一次施作</td><td class='note'>8-RF已完成</td><td class='note'>2-7F等拆架後施作<br>玲嬅談5年保固</td></tr><tr><td class='cat'>海興段</td><td>R1F廁所改浴櫃</td><td class='note'>已請合檠提供樣式</td><td class='note'>追蹤提案報價</td></tr><tr><td class='cat'>海興段</td><td>R1F廁所浴鏡</td><td class='note'>浴鏡請晨品提供</td><td class='note'>追蹤提案報價</td></tr><tr><td class='cat'>海興段</td><td>R1F洗衣槽</td><td class='note'>已詢合檠、晨品</td><td class='note'>追蹤提案報價</td></tr><tr><td class='cat'>其他</td><td>待排簡報：自流平打底(潤泰)、UHPC高強度混凝土</td><td class='note'></td><td class='note'>安排廠商簡報時間</td></tr><tr><td class='cat'>其他</td><td>待排參觀：系統模、同層排水</td><td class='note'></td><td class='note'>安排時間</td></tr><tr><td class='cat'>海興段</td><td>威勝衛浴配件(紙架/掛勾/毛巾架/置物平台)</td><td class='note'>3月底已報價</td><td class='note'>3A1、3A3衛浴安裝後決議；衛浴設備延8/24當周→可安排8月底，已通知廠商</td></tr><tr><td class='cat'>海興段</td><td>浴鏡發包(威勝、意匠家、晨品)</td><td class='note'>設計師挑2款、晨品已比對尺寸</td><td class='note'>3A1、3A3衛浴安裝後決議；衛浴設備延8/24當周→可安排8月底，已通知廠商</td></tr><tr><td class='cat'>海興段</td><td>門牌、指示牌發包(含RF排煙窗拉桿標示)</td><td class='note'>已到92H拍照參考</td><td class='note'>詢價中</td></tr><tr><td class='cat'>海興段</td><td>代管期物業管理(伯克錸、居之友)</td><td class='note'></td><td class='note'>9/7、9/8 PM2:00 簡報</td></tr><tr><td class='cat'>海興段</td><td>帆布固定螺絲補強(集立)</td><td class='note'>雨天無法施作,通知如果好天氣8/27、8/28撥空來處理</td><td class='note'>放晴安排師傅(玲嬅追蹤)</td></tr><tr><td class='cat'>海興段</td><td>交屋文件：驗收單/保固書(沛誼)、Key/設備/使用說明書(玲嬅)</td><td class='note'></td><td class='note'>Key拿到後整理，至現場複核後才交屋</td></tr><tr><td class='cat'>海興段</td><td>海之味風機改善工程</td><td class='note'></td><td class='note'>使照取得後請廠商評估方案</td></tr><tr><td class='cat'>總安段</td><td>新家波管委會-信箱區封板/車道抿石/天井安全網</td><td class='note'>抿石已修復17,321元；安全網已報價1萬(管委會負擔5千)</td><td class='note'>安全網因雨延宕，完成後收款請沛誼協助</td></tr><tr><td class='cat'>總安段</td><td>8/29(六)9:00 區權會</td><td class='note'>委員抽籤決定下屆</td><td class='note'>玲嬅代表出席</td></tr><tr><td class='cat'>其他</td><td>UHPC高強度混凝土廠商簡報</td><td class='note'></td><td class='note'>玲嬅安排</td></tr></table></details>
+</div>
+<footer>93H 進度儀表板｜每週三會後更新 93H進度盤點_*.xlsx 再重新產出｜⭐=使照前重點</footer>
+</body></html>
