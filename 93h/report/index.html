@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>93H 工地回報</title>
+<link rel="apple-touch-icon" href="../icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="93H回報">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+  --brand:#1a5fb4; --brand-dk:#134a8e; --ok:#2e9e5b; --warn:#d97706; --line:#e5e7eb;
+  --chip:#eef2f7; --chip-on:#1a5fb4;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+body{margin:0; font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif; background:var(--bg); color:var(--ink); font-size:16px;}
+header{background:var(--brand); color:#fff; padding:10px 14px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:10px;}
+header h1{font-size:17px; margin:0; flex:1; font-weight:700;}
+header .date{font-size:14px; opacity:.9;}
+.tabs{display:flex; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:44px; z-index:9;}
+.tabs button{flex:1; padding:12px 0; border:none; background:none; font-size:16px; font-weight:700; color:var(--sub); border-bottom:3px solid transparent;}
+.tabs button.on{color:var(--brand); border-bottom-color:var(--brand);}
+main{padding:12px; max-width:640px; margin:0 auto; padding-bottom:120px;}
+.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px;}
+.card h3{margin:0 0 8px; font-size:15px; color:var(--brand-dk);}
+label{font-size:13px; color:var(--sub); display:block; margin-bottom:3px;}
+input[type=text],input[type=number],textarea,select{width:100%; padding:9px 10px; border:1px solid #cbd2dc; border-radius:8px; font-size:16px; font-family:inherit; background:#fff; color:var(--ink);}
+textarea{resize:vertical; min-height:60px;}
+.row{display:flex; gap:8px;}
+.row>*{flex:1;}
+.row .w-num{flex:0 0 74px;}
+.btn{display:inline-block; border:none; border-radius:9px; padding:11px 16px; font-size:16px; font-weight:700; cursor:pointer;}
+.btn-primary{background:var(--brand); color:#fff;}
+.btn-ghost{background:var(--chip); color:var(--ink);}
+.btn-ok{background:var(--ok); color:#fff;}
+.btn-sm{padding:7px 12px; font-size:14px; border-radius:8px;}
+.btn-danger{background:#fee2e2; color:#b91c1c;}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+.chips button{border:1px solid var(--line); background:var(--chip); border-radius:999px; padding:6px 12px; font-size:14px; color:var(--ink); cursor:pointer;}
+.chips button:active{background:var(--chip-on); color:#fff;}
+.worker-row{border-bottom:1px dashed var(--line); padding:8px 0;}
+.worker-row:last-child{border-bottom:none;}
+.q-card{background:var(--card); border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:10px; padding:10px 12px; margin-bottom:10px;}
+.q-card.done{border-left-color:var(--ok);}
+.q-card .q-no{font-weight:700; color:var(--brand-dk); font-size:14px;}
+.q-card .q-text{white-space:pre-wrap; font-size:15px; margin:4px 0 8px; line-height:1.5;}
+.footer-bar{position:fixed; bottom:0; left:0; right:0; background:var(--card); border-top:1px solid var(--line); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; gap:10px; justify-content:center; z-index:20;}
+.footer-bar .btn{flex:1; max-width:300px;}
+.hint{font-size:13px; color:var(--sub); line-height:1.5;}
+.badge{display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; background:var(--chip); color:var(--sub); margin-left:6px;}
+#output-modal{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:50; display:none; align-items:flex-end;}
+#output-modal.show{display:flex;}
+#output-modal .sheet{background:var(--card); width:100%; max-height:85vh; border-radius:16px 16px 0 0; padding:14px; display:flex; flex-direction:column;}
+#output-modal textarea{flex:1; min-height:45vh; font-size:14px; line-height:1.5;}
+#output-modal .sheet-btns{display:flex; gap:10px; margin-top:10px;}
+#output-modal .sheet-btns .btn{flex:1;}
+.toast{position:fixed; top:60px; left:50%; transform:translateX(-50%); background:#111827; color:#fff; padding:9px 18px; border-radius:999px; font-size:14px; z-index:99; opacity:0; transition:opacity .25s; pointer-events:none;}
+.toast.show{opacity:.95;}
+.section-title{display:flex; align-items:center; margin:14px 0 8px;}
+.section-title h2{font-size:15px; margin:0; flex:1;}
+.progress-pill{font-size:13px; color:var(--sub);}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#141821; --card:#1e2530; --ink:#e7eaf0; --sub:#9aa3b2; --line:#313a49; --chip:#2a3342; --brand:#3b82d6; --brand-dk:#8ab4f8;}
+  input[type=text],input[type=number],textarea,select{background:#141821; border-color:#3a4557;}
+  .btn-danger{background:#4a1d1d; color:#fca5a5;}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>93H 工地回報</h1>
+  <span class="date" id="hdr-date"></span>
+</header>
+<div class="tabs">
+  <button id="tab-am" class="on" onclick="switchTab('am')">🌅 早上出工</button>
+  <button id="tab-pm" onclick="switchTab('pm')">🌇 收工回報</button>
+</div>
+
+<main>
+<!-- ============ 早報：出工 ============ -->
+<div id="pane-am">
+  <div class="card">
+    <h3>今日出工（依實際狀況填）</h3>
+    <div id="worker-rows"></div>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="addWorkerRow()">＋ 加一組工班</button>
+    </div>
+    <label style="margin-top:10px;">常用工班（點了直接加一列）</label>
+    <div class="chips" id="vendor-chips"></div>
+  </div>
+  <div class="card">
+    <h3>未進場／異常</h3>
+    <div class="chips">
+      <button onclick="appendAbn('因雨無進場')">因雨無進場</button>
+      <button onclick="appendAbn('天氣不穩定，未進場')">天氣不穩定未進場</button>
+      <button onclick="appendAbn('廠商未到')">廠商未到</button>
+    </div>
+    <textarea id="am-abnormal" placeholder="例：外牆二丁、塗料因雨無進場（沒有就留白）" rows="2"></textarea>
+    <label style="margin-top:8px;">結尾句</label>
+    <input type="text" id="am-closing" value="其餘出工正常">
+  </div>
+</div>
+
+<!-- ============ 晚報：收工回報 ============ -->
+<div id="pane-pm" style="display:none;">
+  <div class="card" id="pm-paste-card">
+    <h3>① 貼上公司擬的回報事項</h3>
+    <p class="hint">把公司傳來的「工作日誌回報事項」整段貼進來，按「拆成逐題」就會變成一題一題可以分別填。</p>
+    <textarea id="pm-paste" rows="6" placeholder="例：
+1. 水電工程施作是否有照公司規定…
+2. 油漆今天施作是否有照公司規定施作
+3. …"></textarea>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button class="btn btn-primary btn-sm" onclick="parseQuestions()">拆成逐題 ▼</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearPm()">清除重來</button>
+    </div>
+  </div>
+
+  <div class="section-title" id="pm-progress-title" style="display:none;">
+    <h2>② 逐題回覆</h2>
+    <span class="progress-pill" id="pm-progress"></span>
+  </div>
+  <div id="q-list"></div>
+  <div id="pm-extra-wrap" style="display:none;">
+    <button class="btn btn-ghost btn-sm" onclick="addExtraQ()">＋ 補充一題（公司清單以外）</button>
+    <div class="card" style="margin-top:10px;">
+      <h3>今日出工數（附在回報後）</h3>
+      <p class="hint">早上填過出工的話會自動帶入，可修改。</p>
+      <textarea id="pm-workers" rows="5" placeholder="1、油漆工程1人，浴室天花板油漆。"></textarea>
+    </div>
+  </div>
+</div>
+</main>
+
+<div class="footer-bar">
+  <button class="btn btn-ok" id="btn-final" onclick="finalize()">✅ 定稿 → 產生LINE回報</button>
+</div>
+
+<div id="output-modal">
+  <div class="sheet">
+    <h3 style="margin:0 0 8px;">LINE 回報格式（長按可全選）</h3>
+    <textarea id="output-text" readonly></textarea>
+    <div class="sheet-btns">
+      <button class="btn btn-primary" onclick="copyOutput()">📋 複製</button>
+      <button class="btn btn-ok" id="btn-send" onclick="sendToServer()" style="display:none;">📤 回傳公司</button>
+      <button class="btn btn-ghost" onclick="closeModal()">關閉</button>
+    </div>
+    <p class="hint" id="send-status" style="margin:6px 0 0;"></p>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 設定 =================
+ * BACKEND_URL：Google Apps Script Web App 網址。
+ * 留空 = 只產生 LINE 文字（複製後貼 LINE 群）。
+ * 填了 = 定稿後多一顆「回傳公司」按鈕，資料直接寫進公司端 Google Sheet。
+ */
+const BACKEND_URL = "";
+const BACKEND_KEY = "93h";   // 與 Apps Script 內 SECRET 一致
+
+const VENDORS = ["油漆工程","水電工程","壁磚工程","大片地磚","樓梯扶手","石材工程","新美工程","粗工","塗料工程","外牆二丁","玻璃工程","磁磚工程","泥作工程","防水工程","清潔","鷹架","電梯","粗清","吊車"];
+const QUICK_ANSWERS = ["依規定","收到","已完成","無異狀","已關閉","已停在R1F","已設定","天候不穩,順延","明日進場","已提醒廠商","今日無派工"];
+
+const WD = ["日","一","二","三","四","五","六"];
+const today = new Date();
+const dateLabel = (today.getMonth()+1) + "/" + today.getDate() + " (" + WD[today.getDay()] + ")";
+document.getElementById("hdr-date").textContent = dateLabel;
+const STORE_KEY = "93h-report-" + today.getFullYear() + (today.getMonth()+1) + today.getDate();
+
+let state = {tab:"am", workers:[], amAbnormal:"", amClosing:"其餘出工正常", pmPaste:"", questions:[], pmWorkers:""};
+try{ const s = localStorage.getItem(STORE_KEY); if(s) state = Object.assign(state, JSON.parse(s)); }catch(e){}
+
+function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
+
+/* ============ 分頁 ============ */
+function switchTab(t){
+  state.tab=t; save();
+  document.getElementById("pane-am").style.display = t==="am"?"":"none";
+  document.getElementById("pane-pm").style.display = t==="pm"?"":"none";
+  document.getElementById("tab-am").classList.toggle("on", t==="am");
+  document.getElementById("tab-pm").classList.toggle("on", t==="pm");
+  document.getElementById("btn-final").textContent = t==="am" ? "✅ 定稿 → 產生LINE出工回報" : "✅ 定稿 → 產生LINE收工回報";
+}
+
+/* ============ 早報 ============ */
+function addWorkerRow(vendor){
+  state.workers.push({vendor:vendor||"", count:"", work:"", equip:""});
+  renderWorkers(); save();
+}
+function delWorkerRow(i){ state.workers.splice(i,1); renderWorkers(); save(); }
+function renderWorkers(){
+  const box=document.getElementById("worker-rows");
+  box.innerHTML="";
+  state.workers.forEach((w,i)=>{
+    const div=document.createElement("div");
+    div.className="worker-row";
+    div.innerHTML =
+      '<div class="row">'+
+        '<div><label>工班/廠商</label><input type="text" list="vendor-list" value="'+esc(w.vendor)+'" oninput="state.workers['+i+'].vendor=this.value;save()"></div>'+
+        '<div class="w-num"><label>人數</label><input type="number" inputmode="numeric" value="'+esc(w.count)+'" oninput="state.workers['+i+'].count=this.value;save()"></div>'+
+      '</div>'+
+      '<div class="row" style="margin-top:6px;">'+
+        '<div style="flex:3;"><label>工作內容</label><input type="text" value="'+esc(w.work)+'" placeholder="例：浴室天花板油漆" oninput="state.workers['+i+'].work=this.value;save()"></div>'+
+        '<div style="flex:1.2;"><label>機具</label><input type="text" value="'+esc(w.equip)+'" placeholder="吊車*1" oninput="state.workers['+i+'].equip=this.value;save()"></div>'+
+      '</div>'+
+      '<div style="text-align:right; margin-top:4px;"><button class="btn btn-danger btn-sm" onclick="delWorkerRow('+i+')">刪除</button></div>';
+    box.appendChild(div);
+  });
+  if(!state.workers.length){ box.innerHTML='<p class="hint">還沒有工班，點下方常用工班或「＋加一組」。</p>'; }
+}
+function appendAbn(txt){
+  const ta=document.getElementById("am-abnormal");
+  ta.value = ta.value ? ta.value+"、"+txt : txt;
+  state.amAbnormal=ta.value; save();
+}
+function buildAmText(){
+  const lines=[dateLabel+" 出工數：",""];
+  let n=0;
+  state.workers.forEach(w=>{
+    if(!w.vendor && !w.work) return;
+    n++;
+    let l = n+"、"+w.vendor+(w.count? w.count+"人":"")+"，"+w.work+"。";
+    if(w.equip) l += "("+w.equip+")";
+    lines.push(l);
+  });
+  const abn=document.getElementById("am-abnormal").value.trim();
+  const closing=document.getElementById("am-closing").value.trim();
+  lines.push("");
+  if(abn) lines.push(abn);
+  if(closing) lines.push(closing);
+  return lines.join("\n").replace(/\n{3,}/g,"\n\n");
+}
+
+/* ============ 晚報 ============ */
+function parseQuestions(){
+  const raw=document.getElementById("pm-paste").value;
+  if(!raw.trim()){ toast("先貼上公司擬的內容"); return; }
+  state.pmPaste=raw;
+  const lines=raw.split(/\r?\n/);
+  const items=[];
+  let cur=null;
+  // 題號：1. / 1、 / 1．，或數字後直接接中文（如「12清潔…」）
+  const numRe=/^\s*(\d{1,2})\s*(?:[\.、．]\s*|(?=[一-鿿]))(.*)$/;
+  for(const line of lines){
+    if(/工作日誌回報事項/.test(line)) continue;   // 標題行略過
+    const m=line.match(numRe);
+    if(m){
+      if(cur) items.push(cur);
+      cur={no:m[1], text:m[2].replace(/^[\.、．]+\s*/,""), answer:""};
+    }else if(cur && line.trim()!==""){
+      cur.text += "\n"+line.trim();
+    }else if(cur && line.trim()==="" ){
+      // 空行：不併入，等下一個編號
+    }
+  }
+  if(cur) items.push(cur);
+  if(!items.length){ toast("看不出題號，請確認格式（1. 2. …）"); return; }
+  state.questions=items; save();
+  // 帶入早報出工數
+  if(!state.pmWorkers && state.workers.length){
+    state.pmWorkers = buildAmText();
+    document.getElementById("pm-workers").value = state.pmWorkers;
+  }
+  renderQuestions();
+  toast("已拆成 "+items.length+" 題");
+}
+function clearPm(){
+  if(state.questions.length && !confirm("清除已拆的題目與回覆？")) return;
+  state.questions=[]; state.pmPaste="";
+  document.getElementById("pm-paste").value="";
+  renderQuestions(); save();
+}
+function addExtraQ(){
+  const next = state.questions.length ? (parseInt(state.questions[state.questions.length-1].no)||state.questions.length)+1 : 1;
+  state.questions.push({no:String(next), text:"（補充）", answer:"", extra:true});
+  renderQuestions(); save();
+  const cards=document.querySelectorAll(".q-card");
+  if(cards.length) cards[cards.length-1].scrollIntoView({behavior:"smooth"});
+}
+function renderQuestions(){
+  const box=document.getElementById("q-list");
+  box.innerHTML="";
+  const has=state.questions.length>0;
+  document.getElementById("pm-progress-title").style.display = has?"":"none";
+  document.getElementById("pm-extra-wrap").style.display = has?"":"none";
+  state.questions.forEach((q,i)=>{
+    const div=document.createElement("div");
+    div.className="q-card"+(q.answer.trim()?" done":"");
+    const chips = QUICK_ANSWERS.map(a=>'<button onclick="setAns('+i+',this.textContent)">'+a+'</button>').join("");
+    div.innerHTML =
+      '<div class="q-no">第 '+esc(q.no)+' 題'+(q.extra?'<span class="badge">工地補充</span>':'')+'</div>'+
+      (q.extra
+        ? '<textarea rows="2" placeholder="補充事項內容" oninput="state.questions['+i+'].text=this.value;save()">'+esc(q.text==="（補充）"?"":q.text)+'</textarea>'
+        : '<div class="q-text">'+esc(q.text)+'</div>')+
+      '<textarea rows="2" placeholder="@ 回覆內容" oninput="setAnsInput('+i+',this.value)">'+esc(q.answer)+'</textarea>'+
+      '<div class="chips">'+chips+'</div>';
+    box.appendChild(div);
+  });
+  updateProgress();
+}
+function setAns(i,txt){
+  const q=state.questions[i];
+  q.answer = q.answer.trim() ? q.answer+"，"+txt : txt;
+  renderQuestions(); save();
+}
+function setAnsInput(i,v){
+  state.questions[i].answer=v; save();
+  const cards=document.querySelectorAll(".q-card");
+  if(cards[i]) cards[i].classList.toggle("done", v.trim()!=="");
+  updateProgress();
+}
+function updateProgress(){
+  const done=state.questions.filter(q=>q.answer.trim()).length;
+  document.getElementById("pm-progress").textContent = done+"/"+state.questions.length+" 題已填";
+}
+function buildPmText(){
+  const lines=[dateLabel+"工作日誌回報事項 :",""];
+  state.questions.forEach(q=>{
+    if(q.extra && !q.text.trim() && !q.answer.trim()) return;
+    lines.push(q.no+"."+q.text.replace(/\n/g,"\n "));
+    lines.push("@"+(q.answer.trim()||"（未填）"));
+    lines.push("");
+  });
+  const w=document.getElementById("pm-workers").value.trim();
+  if(w){ lines.push(dateLabel+" 出工數："); lines.push(""); lines.push(w.replace(/^\d+\/\d+.*出工數：\s*/,"")); }
+  return lines.join("\n").replace(/\n{3,}/g,"\n\n");
+}
+
+/* ============ 定稿與送出 ============ */
+let lastPayload=null;
+function finalize(){
+  let txt;
+  if(state.tab==="am"){
+    if(!state.workers.some(w=>w.vendor||w.work)){ toast("還沒填任何出工"); return; }
+    txt=buildAmText();
+    lastPayload={type:"am", date:dateLabel, text:txt, workers:state.workers,
+      abnormal:document.getElementById("am-abnormal").value.trim()};
+  }else{
+    if(!state.questions.length){ toast("先貼上公司內容並拆題"); return; }
+    const un=state.questions.filter(q=>!q.extra && !q.answer.trim()).length;
+    if(un>0 && !confirm("還有 "+un+" 題沒填，確定定稿？")) return;
+    txt=buildPmText();
+    lastPayload={type:"pm", date:dateLabel, text:txt, questions:state.questions};
+  }
+  document.getElementById("output-text").value=txt;
+  document.getElementById("btn-send").style.display = BACKEND_URL ? "" : "none";
+  document.getElementById("send-status").textContent="";
+  document.getElementById("output-modal").classList.add("show");
+}
+function closeModal(){ document.getElementById("output-modal").classList.remove("show"); }
+function copyOutput(){
+  const ta=document.getElementById("output-text");
+  ta.select(); ta.setSelectionRange(0,999999);
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(ta.value).then(()=>toast("已複製，貼到LINE群"));
+    }else{ document.execCommand("copy"); toast("已複製，貼到LINE群"); }
+  }catch(e){ toast("請長按文字手動複製"); }
+}
+function sendToServer(){
+  if(!BACKEND_URL || !lastPayload) return;
+  const st=document.getElementById("send-status");
+  st.textContent="回傳中…";
+  fetch(BACKEND_URL, {method:"POST", body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString()}, lastPayload))})
+    .then(r=>r.text()).then(()=>{ st.textContent="✅ 已回傳公司（"+new Date().toLocaleTimeString()+"）"; toast("已回傳公司"); })
+    .catch(()=>{ st.textContent="⚠️ 回傳失敗，請改用複製貼LINE，稍後再試。"; });
+}
+
+/* ============ 工具 ============ */
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+/* ============ 初始化 ============ */
+const chipBox=document.getElementById("vendor-chips");
+VENDORS.forEach(v=>{
+  const b=document.createElement("button");
+  b.textContent=v;
+  b.onclick=()=>addWorkerRow(v);
+  chipBox.appendChild(b);
+});
+const dl=document.createElement("datalist"); dl.id="vendor-list";
+VENDORS.forEach(v=>{ const o=document.createElement("option"); o.value=v; dl.appendChild(o); });
+document.body.appendChild(dl);
+
+document.getElementById("pm-paste").value=state.pmPaste||"";
+document.getElementById("pm-workers").value=state.pmWorkers||"";
+document.getElementById("pm-workers").addEventListener("input",e=>{state.pmWorkers=e.target.value;save();});
+document.getElementById("am-abnormal").value=state.amAbnormal||"";
+document.getElementById("am-abnormal").addEventListener("input",e=>{state.amAbnormal=e.target.value;save();});
+document.getElementById("am-closing").value=state.amClosing||"其餘出工正常";
+document.getElementById("am-closing").addEventListener("input",e=>{state.amClosing=e.target.value;save();});
+renderWorkers();
+renderQuestions();
+switchTab(state.tab||"am");
+</script>
+</body>
+</html>
