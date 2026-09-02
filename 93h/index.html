@@ -116,7 +116,7 @@ footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
     fetch("report/plan.json?t="+Date.now(),{cache:"no-store"}).then(r=>r.json()).catch(function(){return null;})
   ]).then(function(res){
     var d=res[0], plan=res[1];
-    var raw=(d.raw||[]), am=(d.am||[]);
+    var raw=(d.raw||[]), am=(d.am||[]), pm=(d.pm||[]), sv=(d.sv||[]);
     document.getElementById("lr-cnt").textContent=raw.length;
     if(!raw.length){ document.getElementById("lr-body").innerHTML="今日尚無工地回報"; return; }
     var h="";
@@ -141,6 +141,31 @@ footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
         var abn=am.length&&am[0][6]? String(am[0][6]):"";
         if(abn) h+="<div style='color:#b45309;margin:0 0 8px'>⚠️ "+esc(abn).replace(/\n/g,"<br>")+"</div>";
       }
+    }
+    // 收工回報摘要（即時）：未答標紅、風險字標橘、明日派工置頂
+    if(pm.length){
+      var RISK=/未完成|順延|改期|延期|滲水|漏水|停工|損壞|無法|斷網|缺失|追加|未進場|未出/;
+      var un=0, tomorrow="", items="";
+      pm.forEach(function(q){
+        var ans=String(q[4]||"").trim();
+        var isUn=!ans||ans==="（未填）";
+        if(isUn) un++;
+        if(String(q[3]).indexOf("明日派工")>=0 && !isUn) tomorrow=ans;
+        var col=isUn?"#c0392b":(RISK.test(ans)?"#b45309":"");
+        items+="<div style='margin:5px 0;line-height:1.45;"+(col?"color:"+col+";":"")+"'><b>"+esc(q[2])+".</b> "+
+               esc(String(q[3]).replace(/\s+/g," ").slice(0,32))+"<br>　@"+(isUn?"（未答）":esc(ans))+"</div>";
+      });
+      if(tomorrow) h+="<div style='margin:6px 0;padding:8px 10px;background:#eef4fb;border-radius:8px'>📌 <b>明日派工：</b>"+esc(tomorrow)+"</div>";
+      h+="<details style='margin:6px 0'><summary style='cursor:pointer'><b>🌇 收工回報 "+pm.length+"題"+
+         (un? "　<span style='color:#c0392b'>🔴"+un+"題未答</span>":"　✅全數作答")+"</b>（點開逐題）</summary>"+
+         "<div style='padding:6px 2px'>"+items+"</div></details>";
+    }
+    // 會勘逐點（即時）
+    if(sv.length){
+      var svItems="";
+      sv.forEach(function(s){ svItems+="<div style='margin:4px 0'><b>"+esc(s[4])+".</b> "+esc(s[5])+"｜"+esc(s[6])+(s[7]?"（照片"+esc(s[7])+"張）":"")+"</div>"; });
+      h+="<details open style='margin:6px 0'><summary style='cursor:pointer'><b>📋 會勘紀錄 "+sv.length+"點</b>"+
+         (sv[0][2]?"　巡視："+esc(sv[0][2]):"")+"</summary><div style='padding:6px 2px'>"+svItems+"</div></details>";
     }
     raw.slice().reverse().forEach(function(r){
       h+="<details style='margin:6px 0'><summary style='cursor:pointer'><b>"+fmtT(r[1])+"</b>　"+r[2]+
