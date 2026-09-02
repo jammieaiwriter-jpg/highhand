@@ -700,7 +700,9 @@ function finalize(){
       photoMeta:photoGroups.map(pg=>({loc:pg.loc,trade:pg.trade,desc:pg.desc,count:pg.photos.length}))};
   }
   document.getElementById("output-text").value=txt;
-  document.getElementById("btn-send").style.display = BACKEND_URL ? "" : "none";
+  const bs=document.getElementById("btn-send");
+  bs.style.display = BACKEND_URL ? "" : "none";
+  bs.disabled=false; bs.style.opacity=""; bs.textContent="📤 回傳公司";
   const hasPhotos = (state.tab==="pm"? PGS.pm : state.tab==="sv"? PGS.sv : []).some(pg=>pg.photos.length);
   document.getElementById("btn-share-photos").style.display = hasPhotos ? "" : "none";
   document.getElementById("share-hint").style.display = hasPhotos ? "" : "none";
@@ -719,8 +721,11 @@ function copyOutput(){
 }
 function sendToServer(){
   if(!BACKEND_URL || !lastPayload) return;
+  const btn=document.getElementById("btn-send");
+  if(btn.disabled) return;   // 防連按重複送
+  btn.disabled=true; btn.style.opacity=".55"; btn.textContent="⏳ 回傳中…";
   const st=document.getElementById("send-status");
-  st.textContent="回傳中…";
+  st.textContent="回傳中，約需幾秒，請勿重按…";
   const post=obj=>fetch(BACKEND_URL,{method:"POST",
     body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString(),
       reporter:document.getElementById("reporter").value.trim()}, obj))}).then(r=>r.text());
@@ -750,8 +755,9 @@ function sendToServer(){
       }
     }
     st.textContent="✅ 已回傳公司"+(jobs.length? "，照片"+jobs.length+"張已歸檔":"")+"（"+new Date().toLocaleTimeString()+"）";
+    btn.textContent="✅ 已回傳"; btn.style.opacity="";
     toast("已回傳公司");
-  }).catch(()=>{ st.textContent="⚠️ 回傳失敗，請改用複製貼LINE，稍後再試。"; });
+  }).catch(()=>{ st.textContent="⚠️ 回傳失敗，請改用複製貼LINE，稍後再試。"; btn.disabled=false; btn.style.opacity=""; btn.textContent="📤 回傳公司"; });
 }
 
 /* ============ 工具 ============ */
