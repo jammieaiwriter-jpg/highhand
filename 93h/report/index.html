@@ -56,6 +56,12 @@ textarea{resize:vertical; min-height:60px;}
 #output-modal textarea{flex:1; min-height:45vh; font-size:14px; line-height:1.5;}
 #output-modal .sheet-btns{display:flex; gap:10px; margin-top:10px;}
 #output-modal .sheet-btns .btn{flex:1;}
+.pg{border:1px dashed var(--line); border-radius:10px; padding:10px; margin-bottom:10px;}
+.thumbs{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
+.thumb{position:relative; width:74px; height:74px; border-radius:8px; overflow:hidden; border:1px solid var(--line);}
+.thumb img{width:100%; height:100%; object-fit:cover;}
+.thumb .x{position:absolute; top:2px; right:2px; width:22px; height:22px; border:none; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; font-size:13px; line-height:22px; padding:0;}
+.addphoto{width:74px; height:74px; border:2px dashed #9aa3b2; border-radius:8px; background:none; color:var(--sub); font-size:24px;}
 .toast{position:fixed; top:60px; left:50%; transform:translateX(-50%); background:#111827; color:#fff; padding:9px 18px; border-radius:999px; font-size:14px; z-index:99; opacity:0; transition:opacity .25s; pointer-events:none;}
 .toast.show{opacity:.95;}
 .section-title{display:flex; align-items:center; margin:14px 0 8px;}
@@ -130,6 +136,15 @@ textarea{resize:vertical; min-height:60px;}
       <p class="hint">早上填過出工的話會自動帶入，可修改。</p>
       <textarea id="pm-workers" rows="5" placeholder="1、油漆工程1人，浴室天花板油漆。"></textarea>
     </div>
+  </div>
+
+  <div class="card">
+    <h3>📷 照片回報</h3>
+    <p class="hint">一組＝一個「位置／工種／內容」＋照片。定稿會產生說明行（照片照舊貼LINE）；
+    按「回傳公司」時照片會自動存進公司雲端「日期／位置_工種_內容」資料夾。
+    ⚠️ 照片不會存進草稿，重新整理頁面會清掉，請當次填完送出。</p>
+    <div id="photo-groups"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup()">＋ 加一組照片</button>
   </div>
 </div>
 </main>
@@ -327,7 +342,82 @@ function buildPmText(){
   });
   const w=document.getElementById("pm-workers").value.trim();
   if(w){ lines.push(dateLabel+" 出工數："); lines.push(""); lines.push(w.replace(/^\d+\/\d+.*出工數：\s*/,"")); }
+  const ph=photoSummaryLines();
+  if(ph.length){ lines.push(""); lines.push("📷 照片說明（照片接續貼上）："); ph.forEach(l=>lines.push(l)); }
   return lines.join("\n").replace(/\n{3,}/g,"\n\n");
+}
+
+/* ============ 照片回報（不進localStorage，重整會清掉） ============ */
+let photoGroups=[];
+function addPhotoGroup(){
+  photoGroups.push({loc:"", trade:"", desc:"", photos:[]});
+  renderPhotoGroups();
+}
+function delPhotoGroup(g){
+  if(photoGroups[g].photos.length && !confirm("刪除這組照片？")) return;
+  photoGroups.splice(g,1); renderPhotoGroups();
+}
+function delPhoto(g,p){ photoGroups[g].photos.splice(p,1); renderPhotoGroups(); }
+function renderPhotoGroups(){
+  const box=document.getElementById("photo-groups");
+  box.innerHTML="";
+  photoGroups.forEach((pg,g)=>{
+    const div=document.createElement("div");
+    div.className="pg";
+    const thumbs = pg.photos.map((ph,p)=>
+      '<div class="thumb"><img src="'+ph.dataUrl+'"><button class="x" onclick="delPhoto('+g+','+p+')">✕</button></div>').join("");
+    div.innerHTML =
+      '<div class="row">'+
+        '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="photoGroups['+g+'].loc=this.value"></div>'+
+        '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="photoGroups['+g+'].trade=this.value"></div>'+
+      '</div>'+
+      '<div style="margin-top:6px;"><label>內容</label><input type="text" value="'+esc(pg.desc)+'" placeholder="例：破損更換後填縫" oninput="photoGroups['+g+'].desc=this.value"></div>'+
+      '<div class="thumbs">'+thumbs+
+        '<button class="addphoto" onclick="document.getElementById(\'file-'+g+'\').click()">＋</button>'+
+        '<input type="file" id="file-'+g+'" accept="image/*" multiple style="display:none;" onchange="addPhotos('+g+',this)">'+
+      '</div>'+
+      '<div style="text-align:right; margin-top:6px;"><button class="btn btn-danger btn-sm" onclick="delPhotoGroup('+g+')">刪除這組</button></div>';
+    box.appendChild(div);
+  });
+}
+function addPhotos(g,input){
+  const files=Array.from(input.files||[]);
+  if(!files.length) return;
+  toast("處理照片中…");
+  let done=0;
+  files.forEach(f=>{
+    compressImage(f).then(dataUrl=>{
+      photoGroups[g].photos.push({dataUrl:dataUrl, name:f.name});
+      if(++done===files.length){ renderPhotoGroups(); toast("已加入 "+files.length+" 張"); }
+    }).catch(()=>{ if(++done===files.length){ renderPhotoGroups(); } toast("有照片讀取失敗"); });
+  });
+  input.value="";
+}
+function compressImage(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const MAX=1600;
+      let w=img.width, h=img.height;
+      if(w>MAX||h>MAX){ const r=Math.min(MAX/w,MAX/h); w=Math.round(w*r); h=Math.round(h*r); }
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      res(c.toDataURL("image/jpeg",0.8));
+    };
+    img.onerror=rej;
+    img.src=url;
+  });
+}
+function photoSummaryLines(){
+  const lines=[];
+  photoGroups.forEach(pg=>{
+    if(!pg.photos.length && !pg.loc && !pg.desc) return;
+    lines.push("▪ "+[pg.loc,pg.trade,pg.desc].filter(Boolean).join("／")+
+      (pg.photos.length? "（照片"+pg.photos.length+"張）":""));
+  });
+  return lines;
 }
 
 /* ============ 定稿與送出 ============ */
@@ -344,7 +434,8 @@ function finalize(){
     const un=state.questions.filter(q=>!q.extra && !q.answer.trim()).length;
     if(un>0 && !confirm("還有 "+un+" 題沒填，確定定稿？")) return;
     txt=buildPmText();
-    lastPayload={type:"pm", date:dateLabel, text:txt, questions:state.questions};
+    lastPayload={type:"pm", date:dateLabel, text:txt, questions:state.questions,
+      photoMeta:photoGroups.map(pg=>({loc:pg.loc,trade:pg.trade,desc:pg.desc,count:pg.photos.length}))};
   }
   document.getElementById("output-text").value=txt;
   document.getElementById("btn-send").style.display = BACKEND_URL ? "" : "none";
@@ -365,9 +456,34 @@ function sendToServer(){
   if(!BACKEND_URL || !lastPayload) return;
   const st=document.getElementById("send-status");
   st.textContent="回傳中…";
-  fetch(BACKEND_URL, {method:"POST", body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString()}, lastPayload))})
-    .then(r=>r.text()).then(()=>{ st.textContent="✅ 已回傳公司（"+new Date().toLocaleTimeString()+"）"; toast("已回傳公司"); })
-    .catch(()=>{ st.textContent="⚠️ 回傳失敗，請改用複製貼LINE，稍後再試。"; });
+  const post=obj=>fetch(BACKEND_URL,{method:"POST",
+    body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString()}, obj))}).then(r=>r.text());
+  post(lastPayload).then(async ()=>{
+    // 晚報：逐張上傳照片（自動歸檔 日期/位置_工種_內容）
+    const jobs=[];
+    if(lastPayload.type==="pm"){
+      photoGroups.forEach(pg=>pg.photos.forEach((ph,i)=>jobs.push({pg,ph,i})));
+    }
+    if(jobs.length){
+      const d=new Date();
+      const dateKey=d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
+      for(let k=0;k<jobs.length;k++){
+        st.textContent="上傳照片 "+(k+1)+"/"+jobs.length+"…";
+        const j=jobs[k];
+        const hh=String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0");
+        try{
+          await post({type:"photo", date:dateLabel, dateKey:dateKey,
+            loc:j.pg.loc, trade:j.pg.trade, desc:j.pg.desc,
+            filename:hh+"_"+(k+1)+".jpg",
+            b64:j.ph.dataUrl.split(",")[1]});
+        }catch(e){
+          st.textContent="⚠️ 第"+(k+1)+"張照片上傳失敗，其餘請照舊貼LINE。"; return;
+        }
+      }
+    }
+    st.textContent="✅ 已回傳公司"+(jobs.length? "，照片"+jobs.length+"張已歸檔":"")+"（"+new Date().toLocaleTimeString()+"）";
+    toast("已回傳公司");
+  }).catch(()=>{ st.textContent="⚠️ 回傳失敗，請改用複製貼LINE，稍後再試。"; });
 }
 
 /* ============ 工具 ============ */
