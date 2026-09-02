@@ -89,6 +89,10 @@ textarea{resize:vertical; min-height:60px;}
 <div id="pane-am">
   <div class="card">
     <h3>今日出工（依實際狀況填）</h3>
+    <div id="plan-banner" style="display:none; margin-bottom:8px;">
+      <button class="btn btn-primary btn-sm" id="plan-btn" onclick="importPlan()"></button>
+      <p class="hint" id="plan-hint" style="margin:4px 0 0;"></p>
+    </div>
     <div id="worker-rows"></div>
     <div style="margin-top:8px; display:flex; gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="addWorkerRow()">＋ 加一組工班</button>
@@ -134,6 +138,7 @@ textarea{resize:vertical; min-height:60px;}
     <div class="card" style="margin-top:10px;">
       <h3>今日出工數（附在回報後）</h3>
       <p class="hint">早上填過出工的話會自動帶入，可修改。</p>
+      <button class="btn btn-ghost btn-sm" onclick="importAmWorkers()" style="margin-bottom:6px;">⬇ 帶入早上出工</button>
       <textarea id="pm-workers" rows="5" placeholder="1、油漆工程1人，浴室天花板油漆。"></textarea>
     </div>
   </div>
@@ -222,11 +227,47 @@ function renderWorkers(){
         '<div style="flex:3;"><label>工作內容</label><input type="text" value="'+esc(w.work)+'" placeholder="例：浴室天花板油漆" oninput="state.workers['+i+'].work=this.value;save()"></div>'+
         '<div style="flex:1.2;"><label>機具</label><input type="text" value="'+esc(w.equip)+'" placeholder="吊車*1" oninput="state.workers['+i+'].equip=this.value;save()"></div>'+
       '</div>'+
-      '<div style="text-align:right; margin-top:4px;"><button class="btn btn-danger btn-sm" onclick="delWorkerRow('+i+')">刪除</button></div>';
+      '<div style="display:flex; align-items:center; margin-top:4px;">'+
+        (w.src? '<span class="badge">預計：'+esc(w.src)+'</span>':'')+
+        '<span style="flex:1;"></span><button class="btn btn-danger btn-sm" onclick="delWorkerRow('+i+')">刪除</button></div>';
     box.appendChild(div);
   });
   if(!state.workers.length){ box.innerHTML='<p class="hint">還沒有工班，點下方常用工班或「＋加一組」。</p>'; }
 }
+/* --- 預計出工帶入（plan.json 由公司端儀表板程式產出） --- */
+let planToday=null;
+function loadPlan(){
+  fetch("plan.json?t="+Date.now(), {cache:"no-store"}).then(r=>r.json()).then(p=>{
+    const iso = today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+    const day = (p.days||[]).find(d=>d.date===iso);
+    if(!day || !day.items.length) return;
+    planToday = day;
+    document.getElementById("plan-banner").style.display="";
+    document.getElementById("plan-btn").textContent="⬇ 帶入今日預計出工（"+day.items.length+"組）";
+    let hint="來源：出工預核（含柏銘表），帶入後可增刪修改。";
+    if(p.generated && p.generated < iso) hint += "⚠️ 資料為 "+p.generated+" 產出，可能未更新。";
+    document.getElementById("plan-hint").textContent=hint;
+  }).catch(()=>{}); // 本機開檔或還沒發佈 plan.json 時安靜略過
+}
+function importPlan(){
+  if(!planToday) return;
+  let added=0;
+  planToday.items.forEach(it=>{
+    const dup = state.workers.some(w=>w.vendor===it.vendor && w.work===it.work);
+    if(dup) return;
+    state.workers.push({vendor:it.vendor, count:"", work:it.work, equip:"", src:it.source||""});
+    added++;
+  });
+  renderWorkers(); save();
+  toast(added? "已帶入 "+added+" 組，請填實際人數":"都已在列表中");
+}
+function importAmWorkers(){
+  if(!state.workers.some(w=>w.vendor||w.work)){ toast("早上沒有填出工"); return; }
+  state.pmWorkers = buildAmText();
+  document.getElementById("pm-workers").value = state.pmWorkers;
+  save(); toast("已帶入早上出工");
+}
+
 function appendAbn(txt){
   const ta=document.getElementById("am-abnormal");
   ta.value = ta.value ? ta.value+"、"+txt : txt;
@@ -511,6 +552,7 @@ document.getElementById("am-closing").addEventListener("input",e=>{state.amClosi
 renderWorkers();
 renderQuestions();
 switchTab(state.tab||"am");
+loadPlan();
 </script>
 </body>
 </html>
