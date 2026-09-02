@@ -108,6 +108,9 @@ footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
     return String(v);
   };
   var vkey=function(v){ return String(v||"").replace(/[(（].*$/,"").slice(0,2); };
+  // 正式廠商名 ↔ 工地口語名 對照（比對用）
+  var ALIAS={"品豪":"油漆","鴻成":"水電","尚和":"石材","阿賓":"石材","佶興":"木門","鈴鹿":"塗料","鈦翔":"地磚","冠維":"泥作","大港":"玻璃","勁揚":"磁磚","金豪":"磁磚","毅文":"粗工","一成":"水電","柯":"油漆"};
+  var vkeys=function(v){ var k=vkey(v); var ks=[k]; if(ALIAS[k]) ks.push(ALIAS[k]); var m=String(v||"").match(/[(（]([^)）]+)/); if(m) ks.push(m[1].slice(0,2)); return ks; };
   Promise.all([
     fetch("https://script.google.com/macros/s/AKfycbxxBXks2VtVjBJZhkzkzTVexEpUmcyCKMKjE18-dpiEh2SnfHcwP2VG6SMPV1NfAblJjw/exec?today=1").then(r=>r.json()),
     fetch("report/plan.json?t="+Date.now(),{cache:"no-store"}).then(r=>r.json()).catch(function(){return null;})
@@ -124,8 +127,12 @@ footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
       var rows="", matchedAm={};
       if(day){
         day.items.forEach(function(it){
-          var k=vkey(it.vendor), hit=null;
-          am.forEach(function(a,i){ if(!hit && (String(a[2]).indexOf(k)>=0 || String(a[4]).indexOf(k)>=0)){ hit=a; matchedAm[i]=true; } });
+          var ks=vkeys(it.vendor), hit=null;
+          am.forEach(function(a,i){
+            if(hit) return;
+            var hay=String(a[2])+"|"+String(a[4]);
+            for(var j=0;j<ks.length;j++){ if(ks[j] && hay.indexOf(ks[j])>=0){ hit=a; matchedAm[i]=true; return; } }
+          });
           rows+="<tr><td>"+(hit?"✅":"🔴")+"</td><td><b>"+esc(it.vendor)+"</b></td><td class='note'>"+esc(it.work)+"</td><td>"+
                 (hit? esc((hit[3]?hit[3]+"人：":"")+hit[4]) : "<span style='color:#c0392b'>未回報出工</span>")+"</td></tr>";
         });
