@@ -130,7 +130,7 @@ footer { text-align:center; color:#888; font-size:.78em; padding:16px; }
           var ks=vkeys(it.vendor), hit=null;
           am.forEach(function(a,i){
             if(hit) return;
-            var hay=String(a[2])+"|"+String(a[4]);
+            var hay=String(a[2]);   // 只比工班名稱欄，避免工作內容出現「水電」等字誤配
             for(var j=0;j<ks.length;j++){ if(ks[j] && hay.indexOf(ks[j])>=0){ hit=a; matchedAm[i]=true; return; } }
           });
           rows+="<tr><td>"+(hit?"✅":"🔴")+"</td><td><b>"+esc(it.vendor)+"</b></td><td class='note'>"+esc(it.work)+"</td><td>"+
