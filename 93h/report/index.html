@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>93H 工地回報</title>
-<link rel="apple-touch-icon" href="../icon-180.png">
-<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="93H回報">
 <style>
@@ -82,6 +82,7 @@ textarea{resize:vertical; min-height:60px;}
 <div class="tabs">
   <button id="tab-am" class="on" onclick="switchTab('am')">🌅 早上出工</button>
   <button id="tab-pm" onclick="switchTab('pm')">🌇 收工回報</button>
+  <button id="tab-sv" onclick="switchTab('sv')">📋 會勘</button>
 </div>
 
 <main>
@@ -150,8 +151,28 @@ textarea{resize:vertical; min-height:60px;}
     ⚠️ 照片不會存進草稿，重新整理頁面會清掉，請當次填完送出。</p>
     <div id="photo-groups"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup()">＋ 加一組照片</button>
-      <button class="btn btn-primary btn-sm" onclick="makePhotoReport()">🧾 產出照片報告(JPG)</button>
+      <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup('pm')">＋ 加一組照片</button>
+      <button class="btn btn-primary btn-sm" onclick="makePhotoReport('pm')">🧾 產出照片報告(JPG)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 會勘紀錄 ============ -->
+<div id="pane-sv" style="display:none;">
+  <div class="card">
+    <h3>會勘資訊</h3>
+    <div class="row">
+      <div><label>巡視長官/人員</label><input type="text" id="sv-inspector" placeholder="例：總經理"></div>
+      <div><label>陪同（選填）</label><input type="text" id="sv-note" placeholder="例：柏銘、玲嬅"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>逐點紀錄（位置＋交辦/缺失＋照片）</h3>
+    <p class="hint">長官走到哪記到哪，一點一張卡。⚠️ 照片不進草稿，重新整理會清掉，請當次定稿送出。</p>
+    <div id="sv-groups"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup('sv')">＋ 加一點</button>
+      <button class="btn btn-primary btn-sm" onclick="makePhotoReport('sv')">🧾 產出會勘報告(JPG)</button>
     </div>
   </div>
 </div>
@@ -212,11 +233,13 @@ function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg
 /* ============ 分頁 ============ */
 function switchTab(t){
   state.tab=t; save();
-  document.getElementById("pane-am").style.display = t==="am"?"":"none";
-  document.getElementById("pane-pm").style.display = t==="pm"?"":"none";
-  document.getElementById("tab-am").classList.toggle("on", t==="am");
-  document.getElementById("tab-pm").classList.toggle("on", t==="pm");
-  document.getElementById("btn-final").textContent = t==="am" ? "✅ 定稿 → 產生LINE出工回報" : "✅ 定稿 → 產生LINE收工回報";
+  ["am","pm","sv"].forEach(k=>{
+    document.getElementById("pane-"+k).style.display = t===k?"":"none";
+    document.getElementById("tab-"+k).classList.toggle("on", t===k);
+  });
+  document.getElementById("btn-final").textContent =
+    t==="am" ? "✅ 定稿 → 產生LINE出工回報" :
+    t==="pm" ? "✅ 定稿 → 產生LINE收工回報" : "✅ 定稿 → 產生LINE會勘紀錄";
 }
 
 /* ============ 早報 ============ */
@@ -401,49 +424,56 @@ function buildPmText(){
   return lines.join("\n").replace(/\n{3,}/g,"\n\n");
 }
 
-/* ============ 照片回報（不進localStorage，重整會清掉） ============ */
-let photoGroups=[];
-function addPhotoGroup(){
-  photoGroups.push({loc:"", trade:"", desc:"", photos:[]});
-  renderPhotoGroups();
+/* ============ 照片群組：pm=收工照片、sv=會勘逐點（不進localStorage，重整會清掉） ============ */
+const PGS={pm:[], sv:[]};
+const PG_BOX={pm:"photo-groups", sv:"sv-groups"};
+const photoGroups=PGS.pm;   // 舊名沿用
+function addPhotoGroup(key){
+  PGS[key].push({loc:"", trade:"", desc:"", photos:[]});
+  renderPhotoGroups(key);
 }
-function delPhotoGroup(g){
-  if(photoGroups[g].photos.length && !confirm("刪除這組照片？")) return;
-  photoGroups.splice(g,1); renderPhotoGroups();
+function delPhotoGroup(key,g){
+  if(PGS[key][g].photos.length && !confirm("刪除這"+(key==="sv"?"點":"組")+"？")) return;
+  PGS[key].splice(g,1); renderPhotoGroups(key);
 }
-function delPhoto(g,p){ photoGroups[g].photos.splice(p,1); renderPhotoGroups(); }
-function renderPhotoGroups(){
-  const box=document.getElementById("photo-groups");
+function delPhoto(key,g,p){ PGS[key][g].photos.splice(p,1); renderPhotoGroups(key); }
+function renderPhotoGroups(key){
+  const box=document.getElementById(PG_BOX[key]);
   box.innerHTML="";
-  photoGroups.forEach((pg,g)=>{
+  PGS[key].forEach((pg,g)=>{
     const div=document.createElement("div");
     div.className="pg";
     const thumbs = pg.photos.map((ph,p)=>
-      '<div class="thumb"><img src="'+ph.dataUrl+'"><button class="x" onclick="delPhoto('+g+','+p+')">✕</button></div>').join("");
-    div.innerHTML =
-      '<div class="row">'+
-        '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="photoGroups['+g+'].loc=this.value"></div>'+
-        '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="photoGroups['+g+'].trade=this.value"></div>'+
-      '</div>'+
-      '<div style="margin-top:6px;"><label>內容</label><input type="text" value="'+esc(pg.desc)+'" placeholder="例：破損更換後填縫" oninput="photoGroups['+g+'].desc=this.value"></div>'+
+      '<div class="thumb"><img src="'+ph.dataUrl+'"><button class="x" onclick="delPhoto(\''+key+'\','+g+','+p+')">✕</button></div>').join("");
+    const fid="file-"+key+"-"+g;
+    const fields = key==="sv"
+      ? '<div class="q-no">第 '+(g+1)+' 點</div>'+
+        '<div style="margin-top:4px;"><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、B2F廢水池" oninput="PGS.sv['+g+'].loc=this.value"></div>'+
+        '<div style="margin-top:6px;"><label>交辦/缺失內容</label><textarea rows="2" placeholder="長官交辦或發現的缺失" oninput="PGS.sv['+g+'].desc=this.value">'+esc(pg.desc)+'</textarea></div>'
+      : '<div class="row">'+
+        '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="PGS.pm['+g+'].loc=this.value"></div>'+
+        '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="PGS.pm['+g+'].trade=this.value"></div>'+
+        '</div>'+
+        '<div style="margin-top:6px;"><label>內容</label><input type="text" value="'+esc(pg.desc)+'" placeholder="例：破損更換後填縫" oninput="PGS.pm['+g+'].desc=this.value"></div>';
+    div.innerHTML = fields+
       '<div class="thumbs">'+thumbs+
-        '<button class="addphoto" onclick="document.getElementById(\'file-'+g+'\').click()">＋</button>'+
-        '<input type="file" id="file-'+g+'" accept="image/*" multiple style="display:none;" onchange="addPhotos('+g+',this)">'+
+        '<button class="addphoto" onclick="document.getElementById(\''+fid+'\').click()">＋</button>'+
+        '<input type="file" id="'+fid+'" accept="image/*" multiple style="display:none;" onchange="addPhotos(\''+key+'\','+g+',this)">'+
       '</div>'+
-      '<div style="text-align:right; margin-top:6px;"><button class="btn btn-danger btn-sm" onclick="delPhotoGroup('+g+')">刪除這組</button></div>';
+      '<div style="text-align:right; margin-top:6px;"><button class="btn btn-danger btn-sm" onclick="delPhotoGroup(\''+key+'\','+g+')">刪除</button></div>';
     box.appendChild(div);
   });
 }
-function addPhotos(g,input){
+function addPhotos(key,g,input){
   const files=Array.from(input.files||[]);
   if(!files.length) return;
   toast("處理照片中…");
   let done=0;
   files.forEach(f=>{
     compressImage(f).then(dataUrl=>{
-      photoGroups[g].photos.push({dataUrl:dataUrl, name:f.name});
-      if(++done===files.length){ renderPhotoGroups(); toast("已加入 "+files.length+" 張"); }
-    }).catch(()=>{ if(++done===files.length){ renderPhotoGroups(); } toast("有照片讀取失敗"); });
+      PGS[key][g].photos.push({dataUrl:dataUrl, name:f.name});
+      if(++done===files.length){ renderPhotoGroups(key); toast("已加入 "+files.length+" 張"); }
+    }).catch(()=>{ if(++done===files.length){ renderPhotoGroups(key); } toast("有照片讀取失敗"); });
   });
   input.value="";
 }
@@ -473,7 +503,8 @@ function dataUrlToFile(dataUrl, name){
 }
 function shareAllPhotos(){
   const files=[];
-  photoGroups.forEach((pg,g)=>pg.photos.forEach((ph,p)=>{
+  const src = state.tab==="sv" ? PGS.sv : PGS.pm;
+  src.forEach((pg,g)=>pg.photos.forEach((ph,p)=>{
     const name=String(g+1)+"-"+(p+1)+"_"+([pg.loc,pg.trade].filter(Boolean).join("_")||"照片")+".jpg";
     files.push(dataUrlToFile(ph.dataUrl, name.replace(/[\\\/:*?"<>|]/g,"-")));
   }));
@@ -496,10 +527,13 @@ function wrapText(ctx, text, maxW){
   if(line) out.push(line);
   return out;
 }
-let jpgPages=[];
-async function makePhotoReport(){
-  const groups=photoGroups.filter(pg=>pg.photos.length);
-  if(!groups.length){ toast("先加照片"); return; }
+let jpgPages=[], jpgPrefix="93H收工照片回報";
+async function makePhotoReport(key){
+  key=key||"pm";
+  const isSv = key==="sv";
+  jpgPrefix = isSv ? "93H會勘紀錄" : "93H收工照片回報";
+  const groups=PGS[key].filter(pg=>pg.photos.length || (isSv && (pg.loc||pg.desc)));
+  if(!groups.length){ toast(isSv?"先加逐點紀錄":"先加照片"); return; }
   toast("合成中…");
   const W=1080, PAD=40, GAP=14, COLW=(W-PAD*2-GAP)/2;
   const HEADER=88, FOOTER=56, MAXBODY=2300;   // 每張圖內容區高度上限，超過自動分張
@@ -511,9 +545,21 @@ async function makePhotoReport(){
   const pages=[]; let blocks=[], bodyH=0;
   const flush=()=>{ if(blocks.length){ pages.push(blocks); blocks=[]; bodyH=0; } };
   const capBlock=t=>{ const lines=wrapText(mx, t, W-PAD*2); return {type:"cap", lines, h:lines.length*44+16}; };
+  if(isSv){
+    const info=[
+      (document.getElementById("sv-inspector").value.trim()? "巡視："+document.getElementById("sv-inspector").value.trim():""),
+      (document.getElementById("sv-note").value.trim()? "陪同："+document.getElementById("sv-note").value.trim():"")
+    ].filter(Boolean).join("　");
+    if(info){ const b=capBlock(info); blocks.push(b); bodyH+=b.h; }
+  }
+  let gi=0;
   for(const pg of groups){
-    const capText="▪ "+[pg.loc,pg.trade,pg.desc].filter(Boolean).join("／");
+    gi++;
+    const capText = isSv
+      ? "▪ "+gi+". "+[pg.loc,pg.desc].filter(Boolean).join("｜")
+      : "▪ "+[pg.loc,pg.trade,pg.desc].filter(Boolean).join("／");
     const imgs=await Promise.all(pg.photos.map(ph=>loadImg(ph.dataUrl)));
+    if(!imgs.length){ const cap0=capBlock(capText); if(bodyH && bodyH+cap0.h>MAXBODY) flush(); blocks.push(cap0); bodyH+=cap0.h+18; blocks.push({type:"gap",h:18}); continue; }
     const rows=[];
     for(let i=0;i<imgs.length;i+=2){
       const pair=imgs.slice(i,i+2);
@@ -545,7 +591,7 @@ async function makePhotoReport(){
     x.fillStyle="#ffffff"; x.fillRect(0,0,W,H);
     x.fillStyle="#1a5fb4"; x.fillRect(0,0,W,HEADER);
     x.fillStyle="#ffffff"; x.font="bold 38px sans-serif";
-    x.fillText("93H 收工照片回報　"+dateLabel+(n>1? "　("+(pi+1)+"/"+n+")":""), PAD, 58);
+    x.fillText(jpgPrefix+"　"+dateLabel+(n>1? "　("+(pi+1)+"/"+n+")":""), PAD, 58);
     let y=HEADER+PAD;
     for(const b of blks){
       if(b.type==="cap"){
@@ -580,7 +626,7 @@ async function makePhotoReport(){
     img.src=u; img.style.cssText="max-width:100%; border-radius:8px; background:#fff; margin-bottom:6px;";
     box.appendChild(img);
     const a=document.createElement("a");
-    a.href=u; a.download="93H收工照片回報_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg";
+    a.href=u; a.download=jpgPrefix+"_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg";
     a.textContent="💾 下載第"+(i+1)+"張";
     a.style.cssText="display:block; color:#8ab4f8; font-size:14px; margin-bottom:14px; text-decoration:none;";
     if(jpgPages.length===1) a.textContent="💾 下載";
@@ -594,7 +640,7 @@ async function makePhotoReport(){
 function shareJpg(){
   if(!jpgPages.length) return;
   const dkey=today.getFullYear()+String(today.getMonth()+1).padStart(2,"0")+String(today.getDate()).padStart(2,"0");
-  const files=jpgPages.map((u,i)=>dataUrlToFile(u, "93H收工照片回報_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg"));
+  const files=jpgPages.map((u,i)=>dataUrlToFile(u, jpgPrefix+"_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg"));
   if(navigator.canShare && navigator.canShare({files:files})){
     navigator.share({files:files}).then(()=>toast("已送出分享")).catch(()=>{});
   }else toast("此瀏覽器不支援分享，請長按圖片儲存後貼LINE");
@@ -610,6 +656,20 @@ function photoSummaryLines(){
 }
 
 /* ============ 定稿與送出 ============ */
+function buildSvText(){
+  const insp=document.getElementById("sv-inspector").value.trim();
+  const note=document.getElementById("sv-note").value.trim();
+  const lines=[dateLabel+" 93H會勘紀錄"];
+  if(insp) lines.push("巡視："+insp);
+  if(note) lines.push("陪同："+note);
+  lines.push("");
+  PGS.sv.forEach((pg,i)=>{
+    if(!pg.loc && !pg.desc && !pg.photos.length) return;
+    lines.push((i+1)+". "+[pg.loc,pg.desc].filter(Boolean).join("｜")+
+      (pg.photos.length? "（照片"+pg.photos.length+"張）":""));
+  });
+  return lines.join("\n");
+}
 let lastPayload=null;
 function finalize(){
   let txt;
@@ -618,6 +678,13 @@ function finalize(){
     txt=buildAmText();
     lastPayload={type:"am", date:dateLabel, text:txt, workers:state.workers,
       abnormal:document.getElementById("am-abnormal").value.trim()};
+  }else if(state.tab==="sv"){
+    if(!PGS.sv.some(pg=>pg.loc||pg.desc||pg.photos.length)){ toast("還沒有逐點紀錄"); return; }
+    txt=buildSvText();
+    lastPayload={type:"survey", date:dateLabel, text:txt,
+      inspector:document.getElementById("sv-inspector").value.trim(),
+      note:document.getElementById("sv-note").value.trim(),
+      items:PGS.sv.map((pg,i)=>({no:i+1, loc:pg.loc, desc:pg.desc, count:pg.photos.length}))};
   }else{
     if(!state.questions.length){ toast("先貼上公司內容並拆題"); return; }
     const un=state.questions.filter(q=>!q.extra && !q.answer.trim()).length;
@@ -628,7 +695,7 @@ function finalize(){
   }
   document.getElementById("output-text").value=txt;
   document.getElementById("btn-send").style.display = BACKEND_URL ? "" : "none";
-  const hasPhotos = state.tab==="pm" && photoGroups.some(pg=>pg.photos.length);
+  const hasPhotos = (state.tab==="pm"? PGS.pm : state.tab==="sv"? PGS.sv : []).some(pg=>pg.photos.length);
   document.getElementById("btn-share-photos").style.display = hasPhotos ? "" : "none";
   document.getElementById("share-hint").style.display = hasPhotos ? "" : "none";
   document.getElementById("send-status").textContent="";
@@ -653,8 +720,9 @@ function sendToServer(){
   post(lastPayload).then(async ()=>{
     // 晚報：逐張上傳照片（自動歸檔 日期/位置_工種_內容）
     const jobs=[];
-    if(lastPayload.type==="pm"){
-      photoGroups.forEach(pg=>pg.photos.forEach((ph,i)=>jobs.push({pg,ph,i})));
+    const srcKey = lastPayload.type==="pm" ? "pm" : lastPayload.type==="survey" ? "sv" : null;
+    if(srcKey){
+      PGS[srcKey].forEach(pg=>pg.photos.forEach((ph,i)=>jobs.push({pg,ph,i})));
     }
     if(jobs.length){
       const d=new Date();
@@ -664,7 +732,8 @@ function sendToServer(){
         const j=jobs[k];
         const hh=String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0");
         try{
-          await post({type:"photo", date:dateLabel, dateKey:dateKey,
+          await post({type:"photo", kind:(lastPayload.type==="survey"?"survey":"pm"),
+            date:dateLabel, dateKey:dateKey,
             loc:j.pg.loc, trade:j.pg.trade, desc:j.pg.desc,
             filename:hh+"_"+(k+1)+".jpg",
             b64:j.ph.dataUrl.split(",")[1]});
@@ -700,6 +769,10 @@ document.getElementById("am-abnormal").value=state.amAbnormal||"";
 document.getElementById("am-abnormal").addEventListener("input",e=>{state.amAbnormal=e.target.value;save();});
 document.getElementById("am-closing").value=state.amClosing||"其餘出工正常";
 document.getElementById("am-closing").addEventListener("input",e=>{state.amClosing=e.target.value;save();});
+document.getElementById("sv-inspector").value=state.svInspector||"";
+document.getElementById("sv-inspector").addEventListener("input",e=>{state.svInspector=e.target.value;save();});
+document.getElementById("sv-note").value=state.svNote||"";
+document.getElementById("sv-note").addEventListener("input",e=>{state.svNote=e.target.value;save();});
 renderWorkers();
 renderQuestions();
 switchTab(state.tab||"am");
