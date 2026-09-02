@@ -149,7 +149,10 @@ textarea{resize:vertical; min-height:60px;}
     按「回傳公司」時照片會自動存進公司雲端「日期／位置_工種_內容」資料夾。
     ⚠️ 照片不會存進草稿，重新整理頁面會清掉，請當次填完送出。</p>
     <div id="photo-groups"></div>
-    <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup()">＋ 加一組照片</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup()">＋ 加一組照片</button>
+      <button class="btn btn-primary btn-sm" onclick="makePhotoReport()">🧾 產出照片報告(JPG)</button>
+    </div>
   </div>
 </div>
 </main>
@@ -164,10 +167,20 @@ textarea{resize:vertical; min-height:60px;}
     <textarea id="output-text" readonly></textarea>
     <div class="sheet-btns">
       <button class="btn btn-primary" onclick="copyOutput()">📋 複製</button>
+      <button class="btn btn-primary" id="btn-share-photos" onclick="shareAllPhotos()" style="display:none;">🖼 照片→LINE</button>
       <button class="btn btn-ok" id="btn-send" onclick="sendToServer()" style="display:none;">📤 回傳公司</button>
       <button class="btn btn-ghost" onclick="closeModal()">關閉</button>
     </div>
+    <p class="hint" id="share-hint" style="display:none; margin:6px 0 0;">先「複製」貼文字到LINE群 → 再按「照片→LINE」選同一個群，全部照片一次送出（順序跟說明行相同）。</p>
     <p class="hint" id="send-status" style="margin:6px 0 0;"></p>
+  </div>
+</div>
+<div id="jpg-modal" style="position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:60; display:none; flex-direction:column; padding:14px;">
+  <div style="flex:1; overflow:auto; text-align:center;" id="jpg-imgs"></div>
+  <p class="hint" style="color:#fff; text-align:center; margin:8px 0;" id="jpg-hint">長按圖片可直接儲存到手機</p>
+  <div style="display:flex; gap:10px;">
+    <button class="btn btn-primary" style="flex:1;" onclick="shareJpg()">📤 分享(LINE)</button>
+    <button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById('jpg-modal').style.display='none'">關閉</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -451,6 +464,141 @@ function compressImage(file){
     img.src=url;
   });
 }
+function dataUrlToFile(dataUrl, name){
+  const b64=dataUrl.split(",")[1];
+  const bin=atob(b64);
+  const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new File([arr], name, {type:"image/jpeg"});
+}
+function shareAllPhotos(){
+  const files=[];
+  photoGroups.forEach((pg,g)=>pg.photos.forEach((ph,p)=>{
+    const name=String(g+1)+"-"+(p+1)+"_"+([pg.loc,pg.trade].filter(Boolean).join("_")||"照片")+".jpg";
+    files.push(dataUrlToFile(ph.dataUrl, name.replace(/[\\\/:*?"<>|]/g,"-")));
+  }));
+  if(!files.length){ toast("沒有照片"); return; }
+  if(navigator.canShare && navigator.canShare({files:files})){
+    navigator.share({files:files}).then(()=>toast("已送出分享")).catch(()=>{});
+  }else{
+    toast("此瀏覽器不支援分享照片，請從相簿多選貼LINE");
+  }
+}
+/* --- 照片報告JPG：標題+每組說明+照片，合成一張圖 --- */
+function loadImg(src){ return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=src; }); }
+function wrapText(ctx, text, maxW){
+  const out=[]; let line="";
+  for(const ch of text){
+    if(ch==="\n"){ out.push(line); line=""; continue; }
+    if(ctx.measureText(line+ch).width>maxW){ out.push(line); line=ch; }
+    else line+=ch;
+  }
+  if(line) out.push(line);
+  return out;
+}
+let jpgPages=[];
+async function makePhotoReport(){
+  const groups=photoGroups.filter(pg=>pg.photos.length);
+  if(!groups.length){ toast("先加照片"); return; }
+  toast("合成中…");
+  const W=1080, PAD=40, GAP=14, COLW=(W-PAD*2-GAP)/2;
+  const HEADER=88, FOOTER=56, MAXBODY=2300;   // 每張圖內容區高度上限，超過自動分張
+  const mc=document.createElement("canvas");
+  const mx=mc.getContext("2d");
+  mx.font="bold 32px sans-serif";
+
+  // 先把每組拆成「說明塊＋照片列塊」，再依高度分頁（整組儘量同一張，太長的組跨張標(續)）
+  const pages=[]; let blocks=[], bodyH=0;
+  const flush=()=>{ if(blocks.length){ pages.push(blocks); blocks=[]; bodyH=0; } };
+  const capBlock=t=>{ const lines=wrapText(mx, t, W-PAD*2); return {type:"cap", lines, h:lines.length*44+16}; };
+  for(const pg of groups){
+    const capText="▪ "+[pg.loc,pg.trade,pg.desc].filter(Boolean).join("／");
+    const imgs=await Promise.all(pg.photos.map(ph=>loadImg(ph.dataUrl)));
+    const rows=[];
+    for(let i=0;i<imgs.length;i+=2){
+      const pair=imgs.slice(i,i+2);
+      const single = pair.length===1 && imgs.length===1;
+      const w = single ? (W-PAD*2) : COLW;
+      const h = Math.round(Math.min(...pair.map(im=>im.height*(w/im.width))));
+      rows.push({type:"row", imgs:pair, w:w, h:Math.min(h, single?900:640)+GAP});
+    }
+    let cap=capBlock(capText);
+    // 說明＋第一列放不下 → 換張
+    if(bodyH && bodyH+cap.h+rows[0].h > MAXBODY) flush();
+    blocks.push(cap); bodyH+=cap.h;
+    for(const row of rows){
+      if(bodyH+row.h > MAXBODY){ flush(); const cont=capBlock(capText+"（續）"); blocks.push(cont); bodyH+=cont.h; }
+      blocks.push(row); bodyH+=row.h;
+    }
+    bodyH+=18; blocks.push({type:"gap", h:18});
+  }
+  flush();
+
+  // 逐張繪製
+  jpgPages=[];
+  const n=pages.length;
+  const stamp="好瀚建設 93H 海興段　"+new Date().toLocaleString("zh-TW",{hour12:false});
+  pages.forEach((blks,pi)=>{
+    const H=HEADER+PAD+blks.reduce((s,b)=>s+b.h,0)+FOOTER;
+    const c=document.createElement("canvas"); c.width=W; c.height=H;
+    const x=c.getContext("2d");
+    x.fillStyle="#ffffff"; x.fillRect(0,0,W,H);
+    x.fillStyle="#1a5fb4"; x.fillRect(0,0,W,HEADER);
+    x.fillStyle="#ffffff"; x.font="bold 38px sans-serif";
+    x.fillText("93H 收工照片回報　"+dateLabel+(n>1? "　("+(pi+1)+"/"+n+")":""), PAD, 58);
+    let y=HEADER+PAD;
+    for(const b of blks){
+      if(b.type==="cap"){
+        x.fillStyle="#1a5fb4"; x.fillRect(PAD-14, y-2, 6, b.lines.length*44);
+        x.fillStyle="#1f2430"; x.font="bold 32px sans-serif";
+        let ty=y+30;
+        for(const ln of b.lines){ x.fillText(ln, PAD, ty); ty+=44; }
+        y+=b.h;
+      }else if(b.type==="row"){
+        let px=PAD;
+        const rh=b.h-GAP;
+        for(const im of b.imgs){
+          const s=Math.max(b.w/im.width, rh/im.height);
+          const sw=b.w/s, sh=rh/s;
+          x.drawImage(im, (im.width-sw)/2, (im.height-sh)/2, sw, sh, px, y, b.w, rh);
+          px+=b.w+GAP;
+        }
+        y+=b.h;
+      }else y+=b.h;
+    }
+    x.fillStyle="#9aa3b2"; x.font="26px sans-serif";
+    x.fillText(stamp+(n>1? "　第"+(pi+1)+"張/共"+n+"張":""), PAD, H-22);
+    jpgPages.push(c.toDataURL("image/jpeg",0.85));
+  });
+
+  // 顯示
+  const dkey=today.getFullYear()+String(today.getMonth()+1).padStart(2,"0")+String(today.getDate()).padStart(2,"0");
+  const box=document.getElementById("jpg-imgs");
+  box.innerHTML="";
+  jpgPages.forEach((u,i)=>{
+    const img=document.createElement("img");
+    img.src=u; img.style.cssText="max-width:100%; border-radius:8px; background:#fff; margin-bottom:6px;";
+    box.appendChild(img);
+    const a=document.createElement("a");
+    a.href=u; a.download="93H收工照片回報_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg";
+    a.textContent="💾 下載第"+(i+1)+"張";
+    a.style.cssText="display:block; color:#8ab4f8; font-size:14px; margin-bottom:14px; text-decoration:none;";
+    if(jpgPages.length===1) a.textContent="💾 下載";
+    box.appendChild(a);
+  });
+  document.getElementById("jpg-hint").textContent = jpgPages.length>1
+    ? "共 "+jpgPages.length+" 張。長按各圖可儲存；「分享」會一次送出全部。"
+    : "長按圖片可直接儲存到手機";
+  document.getElementById("jpg-modal").style.display="flex";
+}
+function shareJpg(){
+  if(!jpgPages.length) return;
+  const dkey=today.getFullYear()+String(today.getMonth()+1).padStart(2,"0")+String(today.getDate()).padStart(2,"0");
+  const files=jpgPages.map((u,i)=>dataUrlToFile(u, "93H收工照片回報_"+dkey+(jpgPages.length>1? "_"+(i+1):"")+".jpg"));
+  if(navigator.canShare && navigator.canShare({files:files})){
+    navigator.share({files:files}).then(()=>toast("已送出分享")).catch(()=>{});
+  }else toast("此瀏覽器不支援分享，請長按圖片儲存後貼LINE");
+}
 function photoSummaryLines(){
   const lines=[];
   photoGroups.forEach(pg=>{
@@ -480,6 +628,9 @@ function finalize(){
   }
   document.getElementById("output-text").value=txt;
   document.getElementById("btn-send").style.display = BACKEND_URL ? "" : "none";
+  const hasPhotos = state.tab==="pm" && photoGroups.some(pg=>pg.photos.length);
+  document.getElementById("btn-share-photos").style.display = hasPhotos ? "" : "none";
+  document.getElementById("share-hint").style.display = hasPhotos ? "" : "none";
   document.getElementById("send-status").textContent="";
   document.getElementById("output-modal").classList.add("show");
 }
