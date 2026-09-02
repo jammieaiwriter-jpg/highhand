@@ -77,6 +77,11 @@ textarea{resize:vertical; min-height:60px;}
 <body>
 <header>
   <h1>93H 工地回報</h1>
+  <select id="reporter" style="width:80px; padding:5px 6px; border:none; border-radius:7px; font-size:14px; background:rgba(255,255,255,.22); color:#fff;">
+    <option value="建麟">建麟</option>
+    <option value="柏銘">柏銘</option>
+    <option value="加仲">加仲</option>
+  </select>
   <span class="date" id="hdr-date"></span>
 </header>
 <div class="tabs">
@@ -716,7 +721,8 @@ function sendToServer(){
   const st=document.getElementById("send-status");
   st.textContent="回傳中…";
   const post=obj=>fetch(BACKEND_URL,{method:"POST",
-    body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString()}, obj))}).then(r=>r.text());
+    body:JSON.stringify(Object.assign({key:BACKEND_KEY, ts:new Date().toISOString(),
+      reporter:document.getElementById("reporter").value.trim()}, obj))}).then(r=>r.text());
   post(lastPayload).then(async ()=>{
     // 晚報：逐張上傳照片（自動歸檔 日期/位置_工種_內容）
     const jobs=[];
@@ -769,6 +775,8 @@ document.getElementById("am-abnormal").value=state.amAbnormal||"";
 document.getElementById("am-abnormal").addEventListener("input",e=>{state.amAbnormal=e.target.value;save();});
 document.getElementById("am-closing").value=state.amClosing||"其餘出工正常";
 document.getElementById("am-closing").addEventListener("input",e=>{state.amClosing=e.target.value;save();});
+try{ document.getElementById("reporter").value=localStorage.getItem("93h-reporter")||"建麟"; }catch(e){}
+document.getElementById("reporter").addEventListener("change",e=>{ try{ localStorage.setItem("93h-reporter", e.target.value); }catch(err){} });
 document.getElementById("sv-inspector").value=state.svInspector||"";
 document.getElementById("sv-inspector").addEventListener("input",e=>{state.svInspector=e.target.value;save();});
 document.getElementById("sv-note").value=state.svNote||"";
