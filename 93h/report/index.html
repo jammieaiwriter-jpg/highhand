@@ -282,14 +282,29 @@ function loadPlan(){
   fetch("plan.json?t="+Date.now(), {cache:"no-store"}).then(r=>r.json()).then(p=>{
     const iso = today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
     const day = (p.days||[]).find(d=>d.date===iso);
-    if(!day || !day.items.length) return;
+    if(!day || !day.items.length){ loadCloudPlan(); return; }   // 檯帳沒有今日→試雲端版
     planToday = day;
     document.getElementById("plan-banner").style.display="";
     document.getElementById("plan-btn").textContent="⬇ 帶入今日預計出工（"+day.items.length+"組）";
     let hint="來源：出工預核（含柏銘表），帶入後可增刪修改。";
     if(p.generated && p.generated < iso) hint += "⚠️ 資料為 "+p.generated+" 產出，可能未更新。";
     document.getElementById("plan-hint").textContent=hint;
-  }).catch(()=>{}); // 本機開檔或還沒發佈 plan.json 時安靜略過
+  }).catch(()=>{ loadCloudPlan(); });
+}
+// 備援：桌機沒產出今日 plan 時，直接抓昨晚收工回報的「明日派工」（純雲端）
+function loadCloudPlan(){
+  if(!BACKEND_URL) return;
+  fetch(BACKEND_URL+"?plan=1").then(r=>r.json()).then(p=>{
+    if(!p.ok || !p.text) return;
+    const yd=new Date(today.getTime()-86400000);
+    const ydLabel=(yd.getMonth()+1)+"/"+yd.getDate();
+    // 只有「昨天的晚報」講的明日才等於今天
+    if(String(p.reportDate).indexOf(ydLabel)!==0) return;
+    planToday={date:"cloud", items:[{vendor:"", work:p.text, source:"昨晚收工#明日派工"}]};
+    document.getElementById("plan-banner").style.display="";
+    document.getElementById("plan-btn").textContent="⬇ 帶入昨晚「明日派工」";
+    document.getElementById("plan-hint").textContent="來源：昨晚收工回報（雲端即時），帶入後請自行拆組修改。";
+  }).catch(()=>{});
 }
 function importPlan(){
   if(!planToday) return;
