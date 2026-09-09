@@ -347,6 +347,7 @@ for r in labor:
 # 規則9（玲嬅 9/9）：與會議紀錄「沛誼工作報告」週統計對帳
 # 雲端分頁「粗工對帳」：週期間|起日|迄日|沛誼總工|沛誼公司|沛誼廠商|超工累計|電鑽工|本週廢棄物|累計台數|來源|備註
 recon_rows = rows_of("粗工對帳", 12)
+LABOR_LEDGER_START = date(2026, 8, 26)  # 粗工打石自此日起記，既往不究
 
 
 def labor_week(d0, d1):
@@ -377,8 +378,13 @@ for r in recon_rows:
     except ValueError:
         ptot = pcomp = pvend = 0
     ok = abs(tot - ptot) < 0.01 and abs(comp - pcomp) < 0.01 and abs(vend - pvend) < 0.01
+    if d0 < LABOR_LEDGER_START and not ok:
+        ok = None  # 盤點表自 8/26 起記，更早的週只能部分核對，不算不符
+    def _num(v):
+        v = str(v or "")
+        return re.sub(r"(\d)\.0$", r"", v)
     recon_disp.append(dict(period=r[0], ptot=ptot, pcomp=pcomp, pvend=pvend, tot=tot, comp=comp, vend=vend,
-                           over=r[6], drill=r[7], waste=r[8], trucks=r[9], src=r[10], note=r[11], ok=ok))
+                           over=_num(r[6]), drill=_num(r[7]), waste=_num(r[8]), trucks=_num(r[9]), src=r[10], note=r[11], ok=ok))
     if _last_end is None or d1 > _last_end:
         _last_end = d1
 recon_pending = None  # 沛誼尚未報告的期間（自上週迄日+1 到今天）
@@ -852,10 +858,10 @@ if recon_disp or recon_pending:
     def _f(n):
         return f"{n:g}"
     rows = ''.join(
-        f"<tr style=background:{'#e8f6ee' if x['ok'] else '#fbe3e0'}><td>{esc(x['period'])}</td>"
+        f"<tr style=background:{'#e8f6ee' if x['ok'] else ('#f2f4f4' if x['ok'] is None else '#fbe3e0')}><td>{esc(x['period'])}</td>"
         f"<td>{_f(x['ptot'])}（公司{_f(x['pcomp'])}/廠商{_f(x['pvend'])}）</td>"
         f"<td>{_f(x['tot'])}（公司{_f(x['comp'])}/廠商{_f(x['vend'])}）</td>"
-        f"<td>{'✅相符' if x['ok'] else '⚠️不符'}</td>"
+        f"<td>{'✅相符' if x['ok'] else ('➖部分(盤點自8/26起)' if x['ok'] is None else '⚠️不符')}</td>"
         f"<td class='note'>超工累計{esc(x['over'])}｜電鑽{esc(x['drill'])}｜廢棄物{esc(x['waste'])}｜累計{esc(x['trucks'])}台</td>"
         f"<td class='note'>{esc(x['src'])}{'｜' + esc(x['note']) if x['note'] else ''}</td></tr>"
         for x in recon_disp)
@@ -882,7 +888,7 @@ if defects:
     _sl.append(f'<a href="#sec-defect" onclick="secopen(\'sec-defect\')">🛠缺失{len(defects)}</a>')
 if weather_alerts:
     _sl.append(f'<a href="#sec-dispatch" onclick="secopen(\'sec-dispatch\')">🌧天氣警示{len(weather_alerts)}</a>')
-if recon_disp and any(not x["ok"] for x in recon_disp):
+if recon_disp and any(x["ok"] is False for x in recon_disp):
     _sl.append(f'<a href="#sec-labor" onclick="secopen(\'sec-labor\')">⛏粗工對帳不符</a>')
 statusline = ('<div class="statusline">' + "".join(_sl) + '</div>'
               '<script>function secopen(i){var d=document.getElementById(i);if(d)d.open=true;}</script>')
