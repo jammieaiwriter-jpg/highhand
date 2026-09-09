@@ -382,7 +382,7 @@ for r in recon_rows:
         ok = None  # 盤點表自 8/26 起記，更早的週只能部分核對，不算不符
     def _num(v):
         v = str(v or "")
-        return re.sub(r"(\d)\.0$", r"", v)
+        return v[:-2] if re.fullmatch(r"\d+\.0", v) else v
     recon_disp.append(dict(period=r[0], ptot=ptot, pcomp=pcomp, pvend=pvend, tot=tot, comp=comp, vend=vend,
                            over=_num(r[6]), drill=_num(r[7]), waste=_num(r[8]), trucks=_num(r[9]), src=r[10], note=r[11], ok=ok))
     if _last_end is None or d1 > _last_end:
