@@ -29,6 +29,44 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 OUT_HTML = os.path.join(BASE, "93H儀表板.html")
 TODAY = date.today()
 
+# 儀表板直接改狀態（2026-09-09）：每列 ✏️ → 瀏覽器 POST update_cell 到回報 Apps Script → 寫回雲端 Sheet 單格
+# ＋自動記異動紀錄；頁面下次重產（整點桌機排程／雲端班次）才反映，改完的列先標灰「已送出」。
+REPORT_API = "https://script.google.com/macros/s/AKfycbxxBXks2VtVjBJZhkzkzTVexEpUmcyCKMKjE18-dpiEh2SnfHcwP2VG6SMPV1NfAblJjw/exec"
+SHEET_ID = "1JBdrqfzQ_AF0fG8x_RT7wjZSTCjCfgdgnX9FRkQJSd0"
+# 可在儀表板上改的欄位：分頁 → [(欄號1-based, 欄名, 常用值)]
+EDIT_FIELDS = {
+    "出工預核": [(5, "實際出工", ["有,人", "未出工()", "⚠️有到人,但做別的", "已完成", "已重排"]), (1, "日期", []), (6, "備註", [])],
+    "行政時程": [(5, "完成", ["已完成", "改期→", "取消"]), (1, "日期", []), (6, "備註", [])],
+    "廠商協調": [(5, "狀態", ["已定案", "結案✓", "待約", "確認中", "待報價"]), (6, "備註", [])],
+    "進料追蹤": [(5, "實際到料", ["已到料", "部分到料", "未到"]), (1, "日期", []), (6, "備註", [])],
+    "待裁決": [(4, "長官裁決", []), (5, "裁決日", []), (6, "備註", [])],
+    "缺失改善": [(7, "狀態", ["已完成", "進行中", "已排程", "待處理", "觀察中", "結案"]), (6, "預計完成", []), (8, "備註", [])],
+    "發包與工作事項": [(3, "現況", ["完成", "結案"]), (4, "下一步", [])],
+    "燈具進度": [(5, "日期狀態", ["已完成", "已進場", "施作中"]), (6, "備註", [])],
+    "石材追蹤": [(3, "狀態", ["已完成", "已進場", "施作中"]), (4, "備註", []), (6, "進度", [])],
+    "磁磚未進場": [(3, "狀態", ["已進場", "已完成"])],
+    "新美鐵件": [(6, "安裝", ["已完成", "安裝中"]), (5, "丈量", ["已完成"]), (7, "備註", []), (9, "進度", [])],
+    "門禁追蹤": [(3, "日期/狀態", ["已完成", "已進場"]), (4, "備註", [])],
+    "使照檢附": [(4, "目前狀態", ["已取得✓", "已交", "已結案✓"]), (5, "備註", [])],
+    "送審變更": [(5, "實際核准", ["已核准"]), (3, "送件日", []), (7, "備註", [])],
+}
+EDIT_KEYCOL = {"燈具進度": 3, "磁磚未進場": 1, "新美鐵件": 4, "使照檢附": 1, "送審變更": 1}
+
+
+class Row(list):
+    """rows_of 的列：帶原始 Sheet 列號 rn（update_cell 用）"""
+    rn = 0
+
+
+def ebtn(sheet, rn, key, label, vals):
+    """產生 ✏️ 按鈕（data-e 帶分頁/列號/目前值）；rn 為 0 或分頁不可編輯時不產生。"""
+    if not rn or sheet not in EDIT_FIELDS:
+        return ""
+    v = {str(c): (str(vals[c - 1]) if c - 1 < len(vals) and vals[c - 1] is not None else "") for c, _, _ in EDIT_FIELDS[sheet]}
+    d = json.dumps({"s": sheet, "r": rn, "k": str(key)[:6], "kc": EDIT_KEYCOL.get(sheet, 2),
+                    "l": str(label)[:40], "v": v}, ensure_ascii=False)
+    return f' <button class="eb" data-e="{html.escape(d, quote=True)}" title="改狀態" type="button">✏️</button>'
+
 # ---------------- 里程碑 ----------------
 # ★ 治理規則：里程碑為長官核定版，只有玲嬅同意才能改（柏銘表動到里程碑時
 #   只能「標示警告」，不得逕改此處）。詳見 工地/AGENTS.md。
@@ -177,11 +215,11 @@ wb = load_workbook(SRC, data_only=True)
 items = []  # dict: 類別, 位置, 項目, 前段(送樣/丈量), 日期狀態, 備註, 使照前, bucket, due
 
 
-def add(cat, loc, name, pre, status, note, permit, prog="", ms=""):
+def add(cat, loc, name, pre, status, note, permit, prog="", ms="", sheet="", rn=0, raw=None):
     b, due = classify(status, note)
     items.append(dict(cat=cat, loc=loc, name=name, pre=pre, status=status,
                       note=note, permit=permit, bucket=b, due=due, prog=prog,
-                      ms=ms or "報完工"))
+                      ms=ms or "報完工", sheet=sheet, rn=rn, raw=raw or []))
 
 
 def txt(v):
@@ -195,7 +233,8 @@ for row in ws.iter_rows(min_row=2):
     if not name:
         continue
     permit = is_yellow(row[2])
-    add("燈具", loc, name, sample, plan, note, permit, ms=vals[6] if len(vals) > 6 else "")
+    add("燈具", loc, name, sample, plan, note, permit, ms=vals[6] if len(vals) > 6 else "",
+        sheet="燈具進度", rn=row[0].row, raw=vals)
 
 ws = wb["石材追蹤"]
 for row in ws.iter_rows(min_row=2):
@@ -205,7 +244,8 @@ for row in ws.iter_rows(min_row=2):
     if not name:
         continue
     add("石材", grp, name, "", status, note, permit,
-        prog=vals[5] if len(vals) > 5 else "", ms=vals[6] if len(vals) > 6 else "")
+        prog=vals[5] if len(vals) > 5 else "", ms=vals[6] if len(vals) > 6 else "",
+        sheet="石材追蹤", rn=row[0].row, raw=vals)
 
 ws = wb["磁磚未進場"]
 for row in ws.iter_rows(min_row=2):
@@ -213,7 +253,8 @@ for row in ws.iter_rows(min_row=2):
     name, size, status = vals[:3]
     if not name:
         continue
-    add("磁磚", size, name, "", status, "", is_yellow(row[0]), ms=vals[3] if len(vals) > 3 else "")
+    add("磁磚", size, name, "", status, "", is_yellow(row[0]), ms=vals[3] if len(vals) > 3 else "",
+        sheet="磁磚未進場", rn=row[0].row, raw=vals)
 
 ws = wb["新美鐵件"]
 for row in ws.iter_rows(min_row=2):
@@ -224,7 +265,8 @@ for row in ws.iter_rows(min_row=2):
         continue
     status = install if (install and not DONE_PAT.search(measure)) or DONE_PAT.search(install) else (install or measure)
     add("鐵件", f"{grp}/{loc}", name, measure, status or install, note, permit,
-        prog=vals[8] if len(vals) > 8 else "", ms=vals[9] if len(vals) > 9 else "")
+        prog=vals[8] if len(vals) > 8 else "", ms=vals[9] if len(vals) > 9 else "",
+        sheet="新美鐵件", rn=row[0].row, raw=vals)
 
 
 # ---- 出工預核 / 缺失改善 / 粗工打石 ----
@@ -232,10 +274,12 @@ def rows_of(name, ncol):
     if name not in wb.sheetnames:
         return []
     out = []
-    for row in wb[name].iter_rows(min_row=2, values_only=True):
+    for i, row in enumerate(wb[name].iter_rows(min_row=2, values_only=True), 2):
         vals = [txt(v) for v in (row[:ncol] if row else [])]
         if any(vals):
-            out.append(vals + [""] * (ncol - len(vals)))
+            r = Row(vals + [""] * (ncol - len(vals)))
+            r.rn = i
+            out.append(r)
     return out
 
 
@@ -401,16 +445,18 @@ if "門禁追蹤" in wb.sheetnames:
             continue
         permit = (len(vals) > 4 and vals[4].upper() in ("V", "★"))
         add("門禁" if (vals[6] if len(vals) > 6 else "") == "1F門禁" else "工項", vendor, name, "", status, note, permit,
-            prog=vals[5] if len(vals) > 5 else "", ms=vals[6] if len(vals) > 6 else "1F門禁")
+            prog=vals[5] if len(vals) > 5 else "", ms=vals[6] if len(vals) > 6 else "1F門禁",
+            sheet="門禁追蹤", rn=row[0].row, raw=vals)
 
 submissions = rows_of("送審變更", 7)
 for s in submissions:
     if s[5] in ("1F門禁", "外牆拆架", "消防檢查", "使照檢查") and s[0] != "消防檢查(消檢)":
-        add("送審", s[1], s[0], "", "已完成" if s[4] else (s[3] or s[2]), s[6], True, ms=s[5])
+        add("送審", s[1], s[0], "", "已完成" if s[4] else (s[3] or s[2]), s[6], True, ms=s[5],
+            sheet="送審變更", rn=s.rn, raw=s)
 
 work_rows = []
 ws = wb["發包與工作事項"]
-for row in ws.iter_rows(min_row=2, values_only=True):
+for _ri, row in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
     vals = [txt(v) for v in (row[:4] if row else [])]
     if len(vals) < 2 or not vals[1]:
         continue
@@ -418,7 +464,9 @@ for row in ws.iter_rows(min_row=2, values_only=True):
         continue
     if re.match(r"^\s*(結案|已結案)", vals[2]) or re.match(r"^\s*(結案|已結案)", vals[3]):
         continue
-    work_rows.append(vals + [""] * (4 - len(vals)))
+    _wr = Row(vals + [""] * (4 - len(vals)))
+    _wr.rn = _ri
+    work_rows.append(_wr)
 
 # ---------------- 規則7：待長官現場確認／拍板（自各分頁自動抓取） ----------------
 PEND_PAT = re.compile(
@@ -505,9 +553,10 @@ def item_rows(lst, show_cat=True):
             note = f"<b>{esc(i['prog'])}</b>" + ("｜" + esc(note) if note else "")
         else:
             note = esc(note)
+        eb = ebtn(i.get("sheet"), i.get("rn"), i["name"], f"{i['cat']} {i['name']}", i.get("raw") or [])
         out.append(
             f"<tr>{cat}<td>{esc(i['loc'])}</td>"
-            f"<td>{star}{esc(i['name'])}</td><td>{badge(i)}</td>"
+            f"<td>{star}{esc(i['name'])}{eb}</td><td>{badge(i)}</td>"
             f"<td class='note'>{note}</td></tr>")
     return "\n".join(out)
 
@@ -607,7 +656,7 @@ work_other = [r for r in work_rows if r[0] not in ("海興段", "其他", "")]
 
 def work_table(rows):
     return "".join(
-        f"<tr><td class='cat'>{esc(r[0])}</td><td>{esc(r[1])}</td>"
+        f"<tr><td class='cat'>{esc(r[0])}</td><td>{esc(r[1])}{ebtn('發包與工作事項', getattr(r, 'rn', 0), r[1], r[1], r)}</td>"
         f"<td class='note'>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td></tr>"
         for r in rows)
 
@@ -754,7 +803,7 @@ for _k, _rs in _fg.items():
     when = minguo(d_key(_rs[-1])) if len(_rs) == 1 else f"{minguo(d_key(_rs[0]))}~{minguo(d_key(_rs[-1]))}"
     dispatch_failed_disp.append(dict(
         when=when, vendor=_k, works="、".join(cores), n=len(_rs),
-        status=str(_last[4]), note=str(_last[5]), sort=d_key(_last)))
+        status=str(_last[4]), note=str(_last[5]), sort=d_key(_last), row=_last))
 dispatch_failed_disp.sort(key=lambda x: x["sort"])
 
 # ---- 規則2：未來排程——同廠商×同工項合併成接力鏈，一列一工項 ----
@@ -767,9 +816,9 @@ for (_v, _c), _rs in _dg.items():
     _rs = sorted(_rs, key=d_key)
     first = _rs[0]
     if len(_rs) == 1:
-        chain = esc(first[2])
+        chain = esc(first[2]) + ebtn('出工預核', first.rn, first[1], f'{first[0]} {first[1]} {first[2]}', first)
     else:
-        chain = " → ".join(f"<b>{minguo(d_key(x))}</b> {esc(x[2])}" for x in _rs)
+        chain = " → ".join(f"<b>{minguo(d_key(x))}</b> {esc(x[2])}{ebtn('出工預核', x.rn, x[1], f'{x[0]} {x[1]} {x[2]}', x)}" for x in _rs)
     notes = []
     for x in _rs:
         if x[5] and x[5] not in notes:
@@ -792,7 +841,7 @@ if dispatch_unverified:
     unverified_html = (
         '<div class="subh" style="color:#c0392b;font-weight:700">🔴 應出未回報（預定日已到，實際出工空白——請追工地補報）</div>'
         '<table><tr><th>日期</th><th>廠商(工項)</th><th>預定工作</th><th>來源</th><th>備註</th></tr>'
-        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(r[0])}</td><td><b>{esc(vendor_label(r))}</b></td>"
+        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(r[0])}</td><td><b>{esc(vendor_label(r))}</b>{ebtn('出工預核', r.rn, r[1], f'{r[0]} {r[1]} {r[2]}', r)}</td>"
                   f"<td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td class='note'>{esc(r[5])}</td></tr>"
                   for r in dispatch_unverified)
         + '</table>')
@@ -804,7 +853,7 @@ if today_filled:
     today_html = (
         '<div class="subh">📍 今日出工（已回報）</div>'
         '<table><tr><th>日期</th><th>廠商(工項)</th><th>預定工作</th><th>實際出工</th><th>備註</th></tr>'
-        + ''.join(f"<tr style=background:{_bg(r)}><td>{esc(r[0])}</td><td><b>{esc(vendor_label(r))}</b></td>"
+        + ''.join(f"<tr style=background:{_bg(r)}><td>{esc(r[0])}</td><td><b>{esc(vendor_label(r))}</b>{ebtn('出工預核', r.rn, r[1], f'{r[0]} {r[1]} {r[2]}', r)}</td>"
                   f"<td>{esc(r[2])}</td><td>{esc(r[4])}</td><td class='note'>{esc(r[5])}</td></tr>"
                   for r in today_filled)
         + '</table>')
@@ -827,11 +876,11 @@ failed_html = ""
 if dispatch_failed_disp or admin_failed:
     failed_html = (
         '<table><tr><th>原定日</th><th>工班／對象</th><th>事項（×延誤次數）</th><th>最新狀態</th><th>備註</th></tr>'
-        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(x['when'])}</td><td><b>{esc(x['vendor'])}</b></td>"
+        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(x['when'])}</td><td><b>{esc(x['vendor'])}</b>{ebtn('出工預核', x['row'].rn, x['row'][1], x['row'][0] + ' ' + x['row'][1] + ' ' + x['row'][2], x['row'])}</td>"
                   f"<td>{esc(x['works'])}{'<b>　×' + str(x['n']) + '次</b>' if x['n'] > 1 else ''}</td>"
                   f"<td>{esc(x['status'])}</td><td class='note'>{esc(x['note'])}</td></tr>"
                   for x in dispatch_failed_disp)
-        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b></td>"
+        + ''.join(f"<tr style=background:#fbe3e0><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b>{ebtn('行政時程', r.rn, r[1], f'{r[0]} {r[1]} {r[2]}', r)}</td>"
                   f"<td>{esc(r[2])}</td><td>{esc(r[4])}</td><td class='note'>{esc(r[5])}</td></tr>"
                   for r in admin_failed)
         + '</table>'
@@ -844,7 +893,7 @@ if decisions or site_confirm:
     if decisions:
         dec_html += ('<div class="subh">⚖️ 待裁決（待裁決分頁）</div>'
                      '<table><tr><th>提出日</th><th>事項</th><th>工地/廠商建議</th><th>備註</th></tr>'
-                     + ''.join(f"<tr><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b></td><td class='note'>{esc(r[2])}</td>"
+                     + ''.join(f"<tr><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b>{ebtn('待裁決', r.rn, r[1], r[1], r)}</td><td class='note'>{esc(r[2])}</td>"
                                f"<td class='note'>{esc(r[5])}</td></tr>" for r in decisions) + '</table>')
     if site_confirm:
         dec_html += ('<div class="subh">👀 待長官現場確認／拍板（自各分頁自動抓取）</div>'
@@ -960,6 +1009,21 @@ footer {{ text-align:center; color:#888; font-size:.78em; padding:16px; }}
 .kpis-sub .kpi .lbl {{ font-size:.72em; }}
 .tw {{ overflow-x:auto; -webkit-overflow-scrolling:touch; }}
 .tw table {{ min-width:620px; }}
+.eb {{ display:none; border:0; background:transparent; cursor:pointer; font-size:.9em; padding:0 3px; opacity:.55; }}
+body.can-edit .eb {{ display:inline; }}
+.eb:hover {{ opacity:1; }}
+tr.edited td {{ background:#eef2f5 !important; color:#888; }}
+tr.edited .eb {{ opacity:1; }}
+#em-bg {{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; z-index:50; }}
+#em {{ position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); background:#fff; border-radius:14px 14px 0 0; box-shadow:0 -4px 20px rgba(0,0,0,.25); padding:14px 16px 18px; display:none; z-index:51; max-height:85vh; overflow:auto; }}
+#em h3 {{ margin:0 0 6px; font-size:1em; }}
+#em .fld {{ margin:8px 0; }}
+#em select, #em input {{ width:100%; font-size:1em; padding:8px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box; }}
+#em .chips button {{ margin:4px 4px 0 0; padding:5px 10px; border-radius:16px; border:1px solid #2471a3; background:#fff; color:#2471a3; cursor:pointer; font-size:.9em; }}
+#em .act {{ display:flex; gap:8px; margin-top:12px; }}
+#em .act button {{ flex:1; padding:10px; border-radius:8px; border:0; font-size:1em; cursor:pointer; }}
+#em .ok {{ background:#1e8449; color:#fff; }} #em .no {{ background:#e5e8ec; }}
+#em .msg {{ font-size:.85em; color:#c0392b; min-height:1.2em; margin-top:6px; }}
 @media (max-width:640px) {{
   header h1 {{ font-size:1.05em; }}
   header .sub {{ font-size:.72em; }}
@@ -984,16 +1048,16 @@ footer {{ text-align:center; color:#888; font-size:.78em; padding:16px; }}
 {statusline}
 <div class="zone">日常追蹤</div>
 <details class="sec dispatch" id="sec-dispatch"><summary>👷 出工預核與回報<span style="font-weight:400;color:#555;margin-left:8px">{esc(wx_today_str)}　今日已報{len(today_filled)}組</span><span class="cnt">{len(dispatch_future_disp)}</span></summary>{unverified_html}{today_html}{weather_html()}{future_html}</details>
-{'<details class="sec"><summary>🤝 廠商協調（送樣/圖說/工序/到場，未定案）<span class="cnt">' + str(len(coord_open)) + '</span></summary><table><tr><th>日期</th><th>廠商</th><th>類型</th><th>事項</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0]) or '—'}</td><td><b>{esc(r[1])}</b></td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td>{esc(r[4])}</td><td class='note'>{esc(r[5])}</td></tr>" for r in coord_open) + '</table></details>' if coord_open else ''}
-{'<details class="sec"><summary>🚚 進料追蹤<span class="cnt">' + str(len(mat_upcoming) + len(mat_unverified)) + '</span></summary><table><tr><th>日期</th><th>廠商</th><th>料項</th><th>來源</th><th>實際到料</th><th>備註</th></tr>' + ''.join(f"<tr{' style=background:#fff7e0' if parse_date(r[0])==TODAY else ''}><td>{esc(r[0]) or '待定'}</td><td><b>{esc(r[1])}</b></td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td>{esc(r[4]) or '—'}</td><td class='note'>{esc(r[5])}</td></tr>" for r in mat_upcoming) + ''.join(f"<tr><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b></td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td>❓未記到料</td><td class='note'>{esc(r[5])}</td></tr>" for r in mat_unverified) + '</table></details>' if (mat_upcoming or mat_unverified) else ''}
-{'<details class="sec"><summary>📅 行事曆與交辦（今天起）<span class="cnt">' + str(len(admin_upcoming)) + '</span></summary><table><tr><th>日期</th><th>對象/窗口</th><th>事項</th><th>來源</th><th>備註</th></tr>' + ''.join(f"<tr{' style=background:#fff7e0' if parse_date(r[0])==TODAY else ''}><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b></td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td class='note'>{esc(r[5])}</td></tr>" for r in admin_upcoming) + '</table></details>' if admin_upcoming else '<details class="sec"><summary>📅 行事曆與交辦（今天起）<span class="cnt">0</span></summary><div style="padding:0 14px 12px;color:#888">今天以後沒有排定的會議／到場／交辦</div></details>'}
+{'<details class="sec"><summary>🤝 廠商協調（送樣/圖說/工序/到場，未定案）<span class="cnt">' + str(len(coord_open)) + '</span></summary><table><tr><th>日期</th><th>廠商</th><th>類型</th><th>事項</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0]) or '—'}</td><td><b>{esc(r[1])}</b>{ebtn('廠商協調', r.rn, r[1], f'{r[1]} {r[3]}', r)}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td>{esc(r[4])}</td><td class='note'>{esc(r[5])}</td></tr>" for r in coord_open) + '</table></details>' if coord_open else ''}
+{'<details class="sec"><summary>🚚 進料追蹤<span class="cnt">' + str(len(mat_upcoming) + len(mat_unverified)) + '</span></summary><table><tr><th>日期</th><th>廠商</th><th>料項</th><th>來源</th><th>實際到料</th><th>備註</th></tr>' + ''.join(f"<tr{' style=background:#fff7e0' if parse_date(r[0])==TODAY else ''}><td>{esc(r[0]) or '待定'}</td><td><b>{esc(r[1])}</b>{ebtn('進料追蹤', r.rn, r[1], f'{r[1]} {r[2]}', r)}</td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td>{esc(r[4]) or '—'}</td><td class='note'>{esc(r[5])}</td></tr>" for r in mat_upcoming) + ''.join(f"<tr><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b>{ebtn('進料追蹤', r.rn, r[1], f'{r[1]} {r[2]}', r)}</td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td>❓未記到料</td><td class='note'>{esc(r[5])}</td></tr>" for r in mat_unverified) + '</table></details>' if (mat_upcoming or mat_unverified) else ''}
+{'<details class="sec"><summary>📅 行事曆與交辦（今天起）<span class="cnt">' + str(len(admin_upcoming)) + '</span></summary><table><tr><th>日期</th><th>對象/窗口</th><th>事項</th><th>來源</th><th>備註</th></tr>' + ''.join(f"<tr{' style=background:#fff7e0' if parse_date(r[0])==TODAY else ''}><td>{esc(r[0])}</td><td><b>{esc(r[1])}</b>{ebtn('行政時程', r.rn, r[1], f'{r[0]} {r[1]} {r[2]}', r)}</td><td>{esc(r[2])}</td><td class='note'>{esc(r[3])}</td><td class='note'>{esc(r[5])}</td></tr>" for r in admin_upcoming) + '</table></details>' if admin_upcoming else '<details class="sec"><summary>📅 行事曆與交辦（今天起）<span class="cnt">0</span></summary><div style="padding:0 14px 12px;color:#888">今天以後沒有排定的會議／到場／交辦</div></details>'}
 <div class="zone">風險與決策</div>
 {'<details class="sec" id="sec-failed" style="border-left:4px solid #c0392b"><summary>🔴 未完成／改期待重排' + failed_hint + '<span class="cnt">' + str(len(dispatch_failed_disp) + len(admin_failed)) + '</span></summary>' + failed_html + '</details>' if failed_html else ''}
 {'<details class="sec" id="sec-dec" style="border-left:4px solid #7030A0"><summary>⚖️ 待長官裁決／現場確認<span class="cnt">' + str(len(decisions) + len(site_confirm)) + '</span></summary>' + dec_html + '</details>' if dec_html else ''}
-{'<details class="sec" id="sec-defect"><summary>🛠️ 缺失改善追蹤（未完成）<span class="cnt">' + str(len(defects)) + '</span></summary><table><tr><th>發現日</th><th>缺失內容</th><th>位置</th><th>責任廠商</th><th>改善方式</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{esc(r[1])}</td><td>{esc(r[2])}</td><td><b>{esc(r[3])}</b></td><td class='note'>{esc(r[4])}</td><td>{esc(r[6])}</td><td class='note'>{esc(r[7])}</td></tr>" for r in defects) + '</table></details>' if defects else ''}
+{'<details class="sec" id="sec-defect"><summary>🛠️ 缺失改善追蹤（未完成）<span class="cnt">' + str(len(defects)) + '</span></summary><table><tr><th>發現日</th><th>缺失內容</th><th>位置</th><th>責任廠商</th><th>改善方式</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{esc(r[1])}{ebtn('缺失改善', r.rn, r[1], r[1], r)}</td><td>{esc(r[2])}</td><td><b>{esc(r[3])}</b></td><td class='note'>{esc(r[4])}</td><td>{esc(r[6])}</td><td class='note'>{esc(r[7])}</td></tr>" for r in defects) + '</table></details>' if defects else ''}
 <div class="zone">行政</div>
-{'<details class="sec"><summary>🏛️ 送審與變更（審核單位，時程可能拖）<span class="cnt">' + str(len(submissions)) + '</span></summary><table><tr><th>事項</th><th>受理/審核單位</th><th>送件日</th><th>預計核准</th><th>實際核准</th><th>備註</th></tr>' + ''.join(f"<tr><td><b>{esc(s[0])}</b></td><td>{esc(s[1])}</td><td>{esc(s[2]) or '—'}</td><td>{esc(s[3]) or '—'}</td><td>{esc(s[4]) or '—'}</td><td class='note'>{esc(s[6])}</td></tr>" for s in submissions) + '</table></details>' if submissions else ''}
-{'<details class="sec"><summary>📑 使照檢附盤點（建照附款）<span class="cnt">' + str(len(rows_of("使照檢附", 5))) + '</span></summary><table><tr><th>檢附項目</th><th>附款</th><th>主辦</th><th>目前狀態</th><th>備註</th></tr>' + ''.join(f"<tr style=background:{'#e8f6ee' if re.search('已取得|已交|已完成|結案|✓', r[3]) else '#fbe3e0'}><td><b>{esc(r[0])}</b></td><td>{esc(r[1])}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td class='note'>{esc(r[4])}</td></tr>" for r in rows_of("使照檢附", 5)) + '</table></details>' if "使照檢附" in wb.sheetnames else ''}
+{'<details class="sec"><summary>🏛️ 送審與變更（審核單位，時程可能拖）<span class="cnt">' + str(len(submissions)) + '</span></summary><table><tr><th>事項</th><th>受理/審核單位</th><th>送件日</th><th>預計核准</th><th>實際核准</th><th>備註</th></tr>' + ''.join(f"<tr><td><b>{esc(s[0])}</b>{ebtn('送審變更', s.rn, s[0], s[0], s)}</td><td>{esc(s[1])}</td><td>{esc(s[2]) or '—'}</td><td>{esc(s[3]) or '—'}</td><td>{esc(s[4]) or '—'}</td><td class='note'>{esc(s[6])}</td></tr>" for s in submissions) + '</table></details>' if submissions else ''}
+{'<details class="sec"><summary>📑 使照檢附盤點（建照附款）<span class="cnt">' + str(len(rows_of("使照檢附", 5))) + '</span></summary><table><tr><th>檢附項目</th><th>附款</th><th>主辦</th><th>目前狀態</th><th>備註</th></tr>' + ''.join(f"<tr style=background:{'#e8f6ee' if re.search('已取得|已交|已完成|結案|✓', r[3]) else '#fbe3e0'}><td><b>{esc(r[0])}</b>{ebtn('使照檢附', r.rn, r[0], r[0], r)}</td><td>{esc(r[1])}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td class='note'>{esc(r[4])}</td></tr>" for r in rows_of("使照檢附", 5)) + '</table></details>' if "使照檢附" in wb.sheetnames else ''}
 <div class="zone">里程碑</div>
 {tree_html()}
 <div class="zone">盤點與其他</div>
@@ -1002,7 +1066,65 @@ footer {{ text-align:center; color:#888; font-size:.78em; padding:16px; }}
 {'<details class="sec" id="sec-labor"><summary>⛏️ 粗工/打石統計（依費用歸屬）<span class="cnt">' + str(len(labor)) + '</span></summary>' + recon_html + '<div class="subh">📊 費用歸屬統計</div><table><tr><th>費用歸屬</th><th>本月工數</th><th>本月金額</th><th>整場工數</th><th>整場金額</th></tr>' + ''.join(f"<tr><td><b>{esc(k)}</b></td><td>{v['m_n']:g}</td><td>{v['m_amt']:,.0f}</td><td>{v['t_n']:g}</td><td>{v['t_amt']:,.0f}</td></tr>" for k, v in sorted(labor_stats.items())) + '</table><div class="subh">最近 15 筆</div><table><tr><th>日期</th><th>工種</th><th>廠商</th><th>人數</th><th>工作內容</th><th>費用歸屬</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{esc(r[1])}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td class='note'>{esc(r[4])}</td><td><b>{esc(r[5])}</b></td><td class='note'>{esc(r[7])}</td></tr>" for r in labor[-15:]) + '</table></details>' if labor else ''}
 {'<details class="sec"><summary>🏘️ 其他案場（總安段/福智/新家波…）<span class="cnt">' + str(len(work_other)) + '</span></summary><table><tr><th>案場</th><th>事項</th><th>現況</th><th>下一步</th></tr>' + work_other_html + '</table></details>' if work_other else ''}
 </div>
-<footer>93H 進度儀表板｜資料源：雲端 Sheet「93H進度盤點雲端」，桌機/雲端排程自動重產｜⭐=使照前重點</footer>
+<footer>93H 進度儀表板｜資料源：雲端 Sheet「93H進度盤點雲端」，桌機/雲端排程自動重產｜⭐=使照前重點｜✏️=直接改雲端狀態（下次重產反映）</footer>
+<div id="em-bg"></div>
+<div id="em"><h3 id="em-title"></h3><div class="ms-sub" id="em-sub"></div>
+<div class="fld"><select id="em-col"></select></div>
+<div class="chips" id="em-chips"></div>
+<div class="fld"><input id="em-val" placeholder="輸入新值"></div>
+<div class="msg" id="em-msg"></div>
+<div class="act"><button class="no" id="em-no" type="button">取消</button><button class="ok" id="em-ok" type="button">送出寫回雲端</button></div></div>
+<script>
+(function(){{
+  var API="__API__", SSID="__SSID__", FIELDS=__FIELDS__;
+  var LS="93h_edits", cur=null;
+  function loadLS(){{ try{{ var o=JSON.parse(localStorage.getItem(LS)||"{{}}"); var t=Date.now(); Object.keys(o).forEach(function(k){{ if(t-o[k].ts>36e5*36) delete o[k]; }}); return o; }}catch(e){{ return {{}}; }} }}
+  function saveLS(o){{ try{{ localStorage.setItem(LS, JSON.stringify(o)); }}catch(e){{}} }}
+  var edits=loadLS();
+  // 後端版本探針：已部署 update_cell 才顯示 ✏️（避免打到舊版 doPost 誤寫回報表）
+  fetch(API+"?ver=1").then(function(r){{ return r.json(); }}).then(function(j){{ if(j && j.features && j.features.indexOf("update_cell")>=0) document.body.classList.add("can-edit"); }}).catch(function(){{}});
+  function keyOf(e,c){{ return e.s+"|"+e.r+"|"+c; }}
+  function markRow(btn,txt){{ var tr=btn.closest("tr"); if(tr){{ tr.classList.add("edited"); }} btn.title=txt; btn.textContent="✅"; }}
+  document.querySelectorAll(".eb").forEach(function(b){{
+    var e=JSON.parse(b.getAttribute("data-e")); var hit=[];
+    Object.keys(e.v).forEach(function(c){{ var st=edits[keyOf(e,c)]; if(st && st.prev===e.v[c]) hit.push(st.name+"："+st.val); }});
+    if(hit.length) markRow(b,"已送出（等重產）："+hit.join("；"));
+  }});
+  var bg=document.getElementById("em-bg"), em=document.getElementById("em"), sel=document.getElementById("em-col"),
+      chips=document.getElementById("em-chips"), val=document.getElementById("em-val"), msg=document.getElementById("em-msg");
+  function close(){{ bg.style.display=em.style.display="none"; cur=null; }}
+  function renderCol(){{
+    var f=FIELDS[cur.e.s][sel.selectedIndex]; var st=edits[keyOf(cur.e,f[0])];
+    val.value=(st && st.prev===cur.e.v[f[0]])? st.val : (cur.e.v[f[0]]||"");
+    chips.innerHTML=""; f[2].forEach(function(p){{ var b=document.createElement("button"); b.type="button"; b.textContent=p;
+      b.onclick=function(){{ val.value=p; val.focus(); var i=p.indexOf("人"); if(p.indexOf("()")>=0){{ var q=p.indexOf("(")+1; val.setSelectionRange(q,q); }} else if(i>0) val.setSelectionRange(i,i); }}; chips.appendChild(b); }});
+    msg.textContent="";
+  }}
+  function open(btn){{
+    var e=JSON.parse(btn.getAttribute("data-e")); cur={{e:e,btn:btn}};
+    document.getElementById("em-title").textContent="✏️ "+e.l;
+    document.getElementById("em-sub").textContent="分頁「"+e.s+"」第 "+e.r+" 列｜寫回雲端 Sheet 並記異動紀錄，儀表板下次重產（整點）反映";
+    sel.innerHTML=""; FIELDS[e.s].forEach(function(f){{ var o=document.createElement("option"); o.textContent=f[1]+"（現：" + (e.v[f[0]]||"空") + "）"; sel.appendChild(o); }});
+    renderCol(); bg.style.display=em.style.display="block"; setTimeout(function(){{ val.focus(); }},50);
+  }}
+  sel.onchange=renderCol;
+  document.addEventListener("click",function(ev){{ var b=ev.target.closest(".eb"); if(b){{ ev.preventDefault(); ev.stopPropagation(); open(b); }} }});
+  bg.onclick=close; document.getElementById("em-no").onclick=close;
+  document.getElementById("em-ok").onclick=function(){{
+    if(!cur) return; var f=FIELDS[cur.e.s][sel.selectedIndex]; var nv=val.value.trim(); var ov=cur.e.v[f[0]]||"";
+    var st=edits[keyOf(cur.e,f[0])]; var expect=(st && st.prev===ov)? st.val : ov;
+    if(nv===expect){{ msg.textContent="值沒有改變"; return; }}
+    var ok=document.getElementById("em-ok"); ok.disabled=true; ok.textContent="寫入中…"; msg.textContent="";
+    var body={{key:"93h",type:"update_cell",ssId:SSID,name:cur.e.s,row:cur.e.r,col:f[0],value:nv,expect:expect,keyCol:cur.e.kc,keyText:cur.e.k,colName:f[1],label:cur.e.l,who:"玲嬅(儀表板)"}};
+    fetch(API,{{method:"POST",body:JSON.stringify(body)}}).then(function(r){{ return r.text(); }}).then(function(t){{
+      var j; try{{ j=JSON.parse(t); }}catch(e){{ j={{ok:false,err:"回應非JSON（可能已寫入，請重整確認）"}}; }}
+      if(j.ok){{ edits[keyOf(cur.e,f[0])]={{val:nv,prev:ov,name:f[1],ts:Date.now()}}; saveLS(edits); markRow(cur.btn,"已送出（等重產）："+f[1]+"："+nv); close(); }}
+      else {{ msg.textContent="寫入失敗："+(j.err==="stale"?"雲端該格已被改成「"+j.cur+"」，請重整頁面再改":(j.err==="row moved"?"列位置已變動（雲端第"+cur.e.r+"列現在是「"+j.cur+"」），請重整頁面":j.err)); }}
+      ok.disabled=false; ok.textContent="送出寫回雲端";
+    }}).catch(function(e){{ msg.textContent="連線失敗："+e; ok.disabled=false; ok.textContent="送出寫回雲端"; }});
+  }};
+}})();
+</script>
 <script>
 (function() {{
   var loaded = Date.now();
@@ -1016,6 +1138,8 @@ footer {{ text-align:center; color:#888; font-size:.78em; padding:16px; }}
 </body></html>"""
 
 page = page.replace("<table", "<div class=\"tw\"><table").replace("</table>", "</table></div>")
+page = (page.replace("__API__", REPORT_API).replace("__SSID__", SHEET_ID)
+        .replace("__FIELDS__", json.dumps({k: [[c, n, p] for c, n, p in v] for k, v in EDIT_FIELDS.items()}, ensure_ascii=False)))
 
 with open(OUT_HTML, "w", encoding="utf-8") as f:
     f.write(page)
