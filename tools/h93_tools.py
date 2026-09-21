@@ -31,6 +31,9 @@
         重產儀表板並 push（與 自動產出上傳儀表板.bat 同邏輯），印 commit hash。
   python h93_tools.py mode
         印目前寫入模式（dry | live）。
+  python h93_tools.py audit [--apply] [--tg] [--always]
+        體檢（不用 LLM）：過期空白預排列→轉待確認題（--apply 才寫）、同日多列、待確認老化、近7日入帳、
+        本機班次失敗、後端版本。--tg：有新開題／有異常／週一才推 Telegram；--always 一定推。
   python h93_tools.py help
         印變更單格式。
 """
@@ -591,27 +594,24 @@ def cmd_pending(args):
 
 
 # ------------------------------------------------------------------ 指令：tg / rebuild / mode
-def cmd_tg(args):
-    with open(args[0], encoding="utf-8-sig") as f:
-        msg = f.read().strip()
+def _tg_send(msg, dry=False):
+    """推 Telegram 給玲嬅（自動分段）。回傳結果 dict，不直接印。"""
     chunks, cur = [], ""
-    for line in msg.split("\n"):
+    for line in msg.strip().split("\n"):
         if len(cur) + len(line) + 1 > 3900:
             chunks.append(cur)
             cur = ""
         cur += line + "\n"
     if cur.strip():
         chunks.append(cur)
-    if "--dry-run" in args:
-        out({"dry_run": True, "chunks": len(chunks), "chars": len(msg), "head": msg[:200]})
-        return
+    if dry:
+        return {"dry_run": True, "chunks": len(chunks), "chars": len(msg), "head": msg[:200]}
     if os.path.exists(TG_CONFIG):
         cfg = json.load(open(TG_CONFIG, encoding="utf-8"))
     else:   # 雲端 routine：金鑰不進 repo，由班次提示以環境變數帶入
         cfg = {"token": os.environ.get("H93_TG_TOKEN", ""), "chat_id": os.environ.get("H93_TG_CHAT", "")}
     if not cfg.get("token") or not cfg.get("chat_id"):
-        out({"ok": False, "error": "沒有 Telegram 設定（桌機 telegram/config.json；雲端 H93_TG_TOKEN／H93_TG_CHAT）"})
-        sys.exit(1)
+        return {"ok": False, "error": "沒有 Telegram 設定（桌機 telegram/config.json；雲端 H93_TG_TOKEN／H93_TG_CHAT）"}
     ids = []
     for c in chunks:
         data = urllib.parse.urlencode({"chat_id": cfg["chat_id"], "text": c}).encode("utf-8")
@@ -619,7 +619,16 @@ def cmd_tg(args):
         d = json.loads(r.read().decode("utf-8"))
         ids.append(d.get("result", {}).get("message_id"))
         time.sleep(1)
-    out({"ok": True, "message_ids": ids, "chunks": len(chunks)})
+    return {"ok": True, "message_ids": ids, "chunks": len(chunks)}
+
+
+def cmd_tg(args):
+    with open(args[0], encoding="utf-8-sig") as f:
+        msg = f.read().strip()
+    res = _tg_send(msg, dry="--dry-run" in args)
+    out(res)
+    if res.get("ok") is False:
+        sys.exit(1)
 
 
 def cmd_rebuild(args):
@@ -669,8 +678,164 @@ def cmd_mode(args):
     print(write_mode())
 
 
+# ------------------------------------------------------------------ 指令：audit（體檢，不用 LLM）
+AUDIT_LOOKBACK = 45      # 過期空白預排列往回看幾天
+AUDIT_MAX_NEW_Q = 8      # 一次最多新開幾題，避免洗版
+WEEKDAY_ZH = "一二三四五六日"
+
+
+def _pdate(s):
+    m = re.match(r"0?(\d+)/(\d+)/(\d+)", norm(s))
+    if not m:
+        return None
+    try:
+        return date(int(m.group(1)) + 1911, int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def _vendor_root(v):
+    return re.sub(r"[\(（].*", "", norm(v)).strip()
+
+
+def cmd_audit(args):
+    """每日／每週體檢：
+    1. 出工預核「預定日已過、實際出工空白」→ 不猜，轉成待確認題問玲嬅（--apply 才寫）
+    2. 同廠商同日多列且其中有空白 → 列報告
+    3. 待確認老化
+    4. 近 7 日每天有沒有入帳
+    5. 本機班次失敗（run_log.jsonl；雲端沒有此檔則略過）
+    6. 後端版本
+    --tg：有新開題、有異常、或週一 → 推 Telegram；--always：一定推。"""
+    today = date.today()
+    wb = open_wb(download())
+    rep = {"date": str(today)}
+
+    # 1. 過期空白預排列
+    g = grid(wb, "出工預核") or []
+    overdue = []
+    by_day = {}
+    for i, row in enumerate(g[1:], 2):
+        d = _pdate(row[0] if row else None)
+        if not d:
+            continue
+        actual = norm(row[4] if len(row) > 4 else "").strip()
+        if 0 < (today - d).days <= 14:      # 今天的列還在等回報，不算
+            by_day.setdefault((d, _vendor_root(row[1] if len(row) > 1 else "")), []).append((i, bool(actual)))
+        if d < today and (today - d).days <= AUDIT_LOOKBACK and not actual:
+            overdue.append({"row": i, "date": d, "vendor": norm(row[1]), "work": norm(row[2])})
+    rep["overdue_blank"] = [{"row": o["row"], "date": f"{o['date'].month}/{o['date'].day}",
+                             "vendor": o["vendor"], "work": o["work"][:40]} for o in overdue]
+
+    # 2. 同廠商同日多列且含空白
+    multi = [{"date": f"{k[0].month}/{k[0].day}", "vendor": k[1], "rows": [r for r, _ in v]}
+             for k, v in sorted(by_day.items()) if len(v) > 1 and any(not a for _, a in v) and k[1]]
+    rep["multi_rows_with_blank"] = multi
+
+    # 3. 待確認老化
+    pg = _pending_grid(wb)
+    open_q = [r for r in pg[1:] if norm(r[5]) == "待回覆"]
+    old_q = [norm(r[1]) for r in open_q if (_pdate(r[0]) and (today - _pdate(r[0])).days > 7)]
+    rep["pending"] = {"open": len(open_q), "answered_not_closed": sum(1 for r in pg[1:] if norm(r[5]) == "已回覆"),
+                      "older_than_7d": old_q}
+
+    # 4. 近 7 日入帳
+    cl = grid(wb, CHANGELOG) or []
+    per_day = {}
+    for row in cl[1:]:
+        d = _pdate(row[0] if row else None)
+        if d and 0 <= (today - d).days <= 7:
+            per_day[d] = per_day.get(d, 0) + 1
+    days = [today.fromordinal(today.toordinal() - k) for k in range(7, 0, -1)]
+    rep["bookings_last7"] = {f"{d.month}/{d.day}({WEEKDAY_ZH[d.weekday()]})": per_day.get(d, 0) for d in days}
+    no_booking = [k for k, v in rep["bookings_last7"].items() if v == 0]
+
+    # 5. 本機班次
+    runs_bad, runs_n = [], 0
+    rl = os.path.join(BASE, "run_log.jsonl")
+    if os.path.exists(rl):
+        for line in open(rl, encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            m = re.match(r"R(\d{8})-", r.get("run_id", ""))
+            if not m:
+                continue
+            rd = datetime.strptime(m.group(1), "%Y%m%d").date()
+            if (today - rd).days > 7:
+                continue
+            runs_n += 1
+            if r.get("decision") == "run" and (r.get("exit") != 0 or r.get("summary_missing")):
+                runs_bad.append(r["run_id"])
+    rep["local_runs_last7"] = {"total": runs_n, "failed": runs_bad}
+
+    # 6. 後端
+    try:
+        ver = json.loads(http_get(EXEC + "?ver=1", timeout=30).decode("utf-8")).get("ver")
+    except Exception:  # noqa: BLE001
+        ver = None
+    rep["backend_ver"] = ver
+
+    # --apply：過期空白 → 待確認（同題目文字存在過就不再問，含已結案／已取消）
+    seen = {norm(r[2]) for r in pg[1:]}
+    new_q, skipped_existing = [], 0
+    nums = [int(norm(r[1])[1:]) for r in pg[1:] if re.fullmatch(r"Q\d+", norm(r[1]))]
+    nxt = (max(nums) + 1) if nums else 1
+    refs_open = " ".join(norm(r[3]) for r in open_q)
+    for o in overdue:
+        q = (f"出工預核r{o['row']}「{o['vendor']}｜{o['work'][:28]}」預定{o['date'].month}/{o['date'].day}，"
+             f"實際欄空白：有來嗎／完成了嗎／改到哪天？")
+        if q in seen or re.search(rf"出工預核 ?r{o['row']}(\D|$)", refs_open):
+            skipped_existing += 1
+            continue
+        if len(new_q) >= AUDIT_MAX_NEW_Q:
+            continue
+        qid = f"Q{nxt:04d}"
+        nxt += 1
+        new_q.append([roc_today(), qid, q, f"出工預核 r{o['row']}", f"audit-{today:%Y%m%d}", "待回覆", "", "", "", ""])
+    rep["new_questions"] = [r[1] for r in new_q]
+    rep["overdue_already_in_queue"] = skipped_existing
+    applied = False
+    if new_q and "--apply" in args:
+        if write_mode() == "dry" and "--force-live" not in args:
+            rep["apply"] = "dry（_state/write_mode.txt=dry，未寫）"
+        else:
+            g2 = pg + new_q
+            vers = fetch_vers()
+            st, txt = import_sheet(PENDING, g2, expect_ver=(vers or {}).get(PENDING) if vers is not None else None)
+            rep["apply"] = post_err(txt) or "ok"
+            applied = rep["apply"] == "ok"
+
+    # 報告文字
+    L = [f"🩺 93H 體檢 {today.month}/{today.day}({WEEKDAY_ZH[today.weekday()]})"]
+    L.append(f"・過期空白預排列 {len(overdue)} 列" +
+             (f"：新開 {', '.join(rep['new_questions'])}" if new_q and applied else
+              (f"：待開 {len(new_q)} 題(未寫入)" if new_q else "")) +
+             (f"；{skipped_existing} 列已在待確認" if skipped_existing else ""))
+    for o in rep["overdue_blank"][:6]:
+        L.append(f"　- r{o['row']} {o['date']} {o['vendor']}｜{o['work'][:24]}")
+    if multi:
+        L.append(f"・同廠商同日多列且有空白 {len(multi)} 組：" +
+                 "、".join(f"{m['date']}{m['vendor']}(r{','.join(map(str, m['rows']))})" for m in multi[:5]))
+    L.append(f"・待確認：待回覆 {rep['pending']['open']} 題" +
+             (f"，超過7天 {len(old_q)} 題（{', '.join(old_q[:8])}）" if old_q else ""))
+    L.append("・近7日入帳筆數：" + " ".join(f"{k}:{v}" for k, v in rep["bookings_last7"].items()) +
+             (f"　⚠️ {'、'.join(no_booking)} 無入帳（當天若有回報請查）" if no_booking else ""))
+    if os.path.exists(rl):
+        L.append(f"・本機班次 7 日內 {runs_n} 場" + (f"，🔴 失敗 {', '.join(runs_bad)}" if runs_bad else "，無失敗"))
+    L.append(f"・後端版本 {ver if ver else '🔴 連不上'}")
+    text = "\n".join(L)
+    rep["text"] = text
+
+    trouble = bool(runs_bad) or ver is None
+    if "--tg" in args and ("--always" in args or (new_q and applied) or trouble or today.weekday() == 0):
+        rep["tg"] = _tg_send(text)
+    out(rep)
+
+
 # ------------------------------------------------------------------ main
-CMDS = {"today": cmd_today, "snapshot": cmd_snapshot, "dump": cmd_dump, "find": cmd_find,
+CMDS = {"today": cmd_today, "snapshot": cmd_snapshot, "dump": cmd_dump, "find": cmd_find, "audit": cmd_audit,
         "changelog": cmd_changelog, "apply": cmd_apply, "pending": cmd_pending, "tg": cmd_tg,
         "rebuild": cmd_rebuild, "mode": cmd_mode}
 
