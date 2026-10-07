@@ -312,19 +312,26 @@ dispatch_unverified = sorted(
     key=d_key)
 # 同工班最近一次「人有到」的日期（用來自動結案改期列）
 last_attend = {}
+last_attend_work = {}   # (工班, 工項核心) → 最近到場日；體檢自動標記列只認同工項
 for _r in dispatch_all:
     _d = parse_date(_r[0])
     if _d and _d <= TODAY and attended(_r[4]):
         _k = vbase(_r[1])
         if _d > last_attend.get(_k, date.min):
             last_attend[_k] = _d
+        _kw = (_k, work_core(_r[2]))
+        if _d > last_attend_work.get(_kw, date.min):
+            last_attend_work[_kw] = _d
 FAIL_PAT = re.compile(r"未出|未完成|未進|未派|改期|未施作")
 dispatch_failed = sorted(
     [r for r in dispatch_all
      if (parse_date(r[0]) or date.max) <= TODAY and FAIL_PAT.search(str(r[4]))
      and "已重排" not in str(r[4]) and "已完成" not in str(r[4])
      # 規則3（玲嬅 9/9）：原定日之後同一工班已出工 → 改期列自動取消
-     and not (last_attend.get(vbase(r[1]), date.min) > d_key(r))],
+     and not ((last_attend_work.get((vbase(r[1]), work_core(r[2])), date.min) if "自動標記" in str(r[4])
+               else last_attend.get(vbase(r[1]), date.min)) > d_key(r))],
+    # 10/7：體檢自動標記的列（未出工?(無回報…)）只有同工班「同工項」再出工才消失——
+    #       新美這類多工項廠商做別的事不算，保留在改期區提醒重排（玲嬅：過期項保留提醒）
     key=d_key)
 
 mat_all = rows_of("進料追蹤", 6)
