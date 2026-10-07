@@ -680,7 +680,10 @@ def cmd_mode(args):
 
 # ------------------------------------------------------------------ 指令：audit（體檢，不用 LLM）
 AUDIT_LOOKBACK = 45      # 過期空白預排列往回看幾天
-AUDIT_MAX_NEW_Q = 8      # 一次最多新開幾題，避免洗版
+AUDIT_MAX_NEW_Q = 8      # （舊）一次最多新開幾題；2026-10-07 起過期空白不再開題
+AUDIT_GRACE_DAYS = 2     # 預定日過幾天仍空白才自動標記（留給晚場與隔日補帳）
+PENDING_EXPIRE_DAYS = 14 # 待確認題幾天沒回自動「逾期關閉」（自動結案規則 §四）
+AUTO_MARK = "未出工?(無回報,{md}自動標記)"
 WEEKDAY_ZH = "一二三四五六日"
 
 
@@ -700,7 +703,8 @@ def _vendor_root(v):
 
 def cmd_audit(args):
     """每日／每週體檢：
-    1. 出工預核「預定日已過、實際出工空白」→ 不猜，轉成待確認題問玲嬅（--apply 才寫）
+    1. 出工預核「預定日已過 AUDIT_GRACE_DAYS 天、實際出工空白、同廠商當天無其他回報」→
+       自動填「未出工?(無回報,M/D自動標記)」移入改期區（2026-10-07 自動結案規則 §二；不再開題）
     2. 同廠商同日多列且其中有空白 → 列報告
     3. 待確認老化
     4. 近 7 日每天有沒有入帳
@@ -723,7 +727,11 @@ def cmd_audit(args):
         if 0 < (today - d).days <= 14:      # 今天的列還在等回報，不算
             by_day.setdefault((d, _vendor_root(row[1] if len(row) > 1 else "")), []).append((i, bool(actual)))
         if d < today and (today - d).days <= AUDIT_LOOKBACK and not actual:
-            overdue.append({"row": i, "date": d, "vendor": norm(row[1]), "work": norm(row[2])})
+            overdue.append({"row": i, "date": d, "vendor": norm(row[1]), "work": norm(row[2]),
+                            "raw_date": norm(row[0])})
+    _reported = {(_pdate(r[0]), _vendor_root(r[1])) for r in g[1:]
+                 if r and len(r) > 4 and _pdate(r[0]) and norm(r[4]).strip()}
+    overdue = [o for o in overdue if (o["date"], _vendor_root(o["vendor"])) not in _reported]
     rep["overdue_blank"] = [{"row": o["row"], "date": f"{o['date'].month}/{o['date'].day}",
                              "vendor": o["vendor"], "work": o["work"][:40]} for o in overdue]
 
@@ -777,44 +785,69 @@ def cmd_audit(args):
         ver = None
     rep["backend_ver"] = ver
 
-    # --apply：過期空白 → 待確認（同題目文字存在過就不再問，含已結案／已取消）
-    seen = {norm(r[2]) for r in pg[1:]}
-    new_q, skipped_existing = [], 0
-    nums = [int(norm(r[1])[1:]) for r in pg[1:] if re.fullmatch(r"Q\d+", norm(r[1]))]
-    nxt = (max(nums) + 1) if nums else 1
-    refs_open = " ".join(norm(r[3]) for r in open_q)
-    for o in overdue:
-        q = (f"出工預核r{o['row']}「{o['vendor']}｜{o['work'][:28]}」預定{o['date'].month}/{o['date'].day}，"
-             f"實際欄空白：有來嗎／完成了嗎／改到哪天？")
-        if q in seen or re.search(rf"出工預核 ?r{o['row']}(\D|$)", refs_open):
-            skipped_existing += 1
-            continue
-        if len(new_q) >= AUDIT_MAX_NEW_Q:
-            continue
-        qid = f"Q{nxt:04d}"
-        nxt += 1
-        new_q.append([roc_today(), qid, q, f"出工預核 r{o['row']}", f"audit-{today:%Y%m%d}", "待回覆", "", "", "", ""])
-    rep["new_questions"] = [r[1] for r in new_q]
-    rep["overdue_already_in_queue"] = skipped_existing
+    # --apply ①：過期空白（超過寬限天數）→ 自動標記移入改期區（不開題）
+    to_mark = [o for o in overdue if (today - o["date"]).days >= AUDIT_GRACE_DAYS]
+    rep["auto_marked"] = [f"r{o['row']} {o['date'].month}/{o['date'].day} {o['vendor']}" for o in to_mark]
+    mark_rows = {o["row"] for o in to_mark}
     applied = False
-    if new_q and "--apply" in args:
-        if write_mode() == "dry" and "--force-live" not in args:
-            rep["apply"] = "dry（_state/write_mode.txt=dry，未寫）"
-        else:
-            g2 = pg + new_q
-            vers = fetch_vers()
-            st, txt = import_sheet(PENDING, g2, expect_ver=(vers or {}).get(PENDING) if vers is not None else None)
-            rep["apply"] = post_err(txt) or "ok"
-            applied = rep["apply"] == "ok"
+    is_dry = write_mode() == "dry" and "--force-live" not in args
+    if to_mark and "--apply" in args:
+        md = f"{today.month}/{today.day}"
+        doc = {"source": f"體檢自動標記(自動結案規則§二) {md}",
+               "changelog": {"item": f"{md}體檢:過期空白預排自動標記{len(to_mark)}列",
+                             "detail": "預定日已過且無回報→實際出工填「未出工?(無回報,自動標記)」移入改期待重排；"
+                                       "工班之後再出工即自動消失。" + "、".join(rep["auto_marked"][:12])},
+               "ops": [{"op": "set", "sheet": "出工預核", "row": o["row"], "col": 5,
+                        "value": AUTO_MARK.format(md=md),
+                        "expect": {"1": o["raw_date"], "2": _vendor_root(o["vendor"])[:3]}} for o in to_mark]}
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        fp = os.path.join(BACKUP_DIR, f"audit_mark_{today:%Y%m%d}.json")
+        with open(fp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False, indent=1)
+        cmd = [sys.executable, os.path.abspath(__file__), "apply", fp, "--run-id", f"audit-{today:%Y%m%d}"]
+        if is_dry:
+            cmd.append("--dry-run")
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+        try:
+            rep["mark_apply"] = json.loads(r.stdout).get("summary")
+        except ValueError:
+            rep["mark_apply"] = {"error": (r.stdout + r.stderr)[-300:]}
+        applied = not is_dry and (rep["mark_apply"] or {}).get("出工預核") == "pushed_ok"
+
+    # --apply ②：待確認逾期關閉（開題超過 PENDING_EXPIRE_DAYS 天未回）；
+    #            過期空白題（audit 開的）所指的列已自動標記 → 一併關閉
+    expired = []
+    for r in pg[1:]:
+        if norm(r[5]) != "待回覆":
+            continue
+        pd_ = _pdate(r[0])
+        ref_rows = {int(x) for x in re.findall(r"出工預核 ?r(\d+)", norm(r[3]))}
+        if ref_rows and ref_rows <= mark_rows and norm(r[4]).startswith("audit-"):
+            expired.append((r, "該列已由體檢自動標記未出工?,移入改期待重排"))
+        elif pd_ and (today - pd_).days >= PENDING_EXPIRE_DAYS:
+            expired.append((r, f"{PENDING_EXPIRE_DAYS}天未回覆自動關閉(資料維持原樣;週三會議可順便問)"))
+    rep["expired_questions"] = [norm(r[1]) for r, _ in expired]
+    if expired and "--apply" in args and not is_dry:
+        for r, why in expired:
+            r[5] = "逾期關閉"
+            r[7] = roc_today()
+            r[8] = f"audit-{today:%Y%m%d}"
+            r[9] = why
+        vers = fetch_vers()
+        st, txt = import_sheet(PENDING, pg, expect_ver=(vers or {}).get(PENDING) if vers is not None else None)
+        rep["expire_apply"] = post_err(txt) or "ok"
+    new_q = []
+    rep["new_questions"] = []
 
     # 報告文字
     L = [f"🩺 93H 體檢 {today.month}/{today.day}({WEEKDAY_ZH[today.weekday()]})"]
     L.append(f"・過期空白預排列 {len(overdue)} 列" +
-             (f"：新開 {', '.join(rep['new_questions'])}" if new_q and applied else
-              (f"：待開 {len(new_q)} 題(未寫入)" if new_q else "")) +
-             (f"；{skipped_existing} 列已在待確認" if skipped_existing else ""))
-    for o in rep["overdue_blank"][:6]:
-        L.append(f"　- r{o['row']} {o['date']} {o['vendor']}｜{o['work'][:24]}")
+             (f"；自動標記未出工? {len(to_mark)} 列→改期待重排" + ("" if applied else "(未寫入)") if to_mark else ""))
+    for o in to_mark[:6]:
+        L.append(f"　- r{o['row']} {o['date'].month}/{o['date'].day} {o['vendor']}｜{o['work'][:24]}")
+    if expired:
+        L.append(f"・待確認逾期關閉 {len(expired)} 題：{', '.join(rep['expired_questions'][:10])}")
     if multi:
         L.append(f"・同廠商同日多列且有空白 {len(multi)} 組：" +
                  "、".join(f"{m['date']}{m['vendor']}(r{','.join(map(str, m['rows']))})" for m in multi[:5]))
@@ -829,7 +862,7 @@ def cmd_audit(args):
     rep["text"] = text
 
     trouble = bool(runs_bad) or ver is None
-    if "--tg" in args and ("--always" in args or (new_q and applied) or trouble or today.weekday() == 0):
+    if "--tg" in args and ("--always" in args or applied or bool(expired) or trouble or today.weekday() == 0):
         rep["tg"] = _tg_send(text)
     out(rep)
 
