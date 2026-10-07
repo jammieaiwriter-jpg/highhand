@@ -294,7 +294,7 @@ dispatch_all = rows_of("出工預核", 6)
 # 欄：提出日|編號|問題|相關分頁/列|提出班次|狀態|回覆|回覆日|回覆來源|落實備註|選項(以|分隔)|TG訊息ID
 pq_rows = [r for r in rows_of("待確認", 12) if r[5] in ("待回覆", "已回覆")]
 pq_open = [r for r in pq_rows if r[5] == "待回覆"]
-pq_open.sort(key=lambda r: ("🔴" not in r[2], d_key(r)))
+pq_open.sort(key=lambda r: ("🔴" not in r[2], parse_date(r[0]) or date.max))
 pq_done = [r for r in pq_rows if r[5] == "已回覆"]
 
 
