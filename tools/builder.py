@@ -290,6 +290,36 @@ def rows_of(name, ncol):
 
 dispatch_all = rows_of("出工預核", 6)
 
+# ---- 👆 待你確認（2026-10-07）：待確認分頁「待回覆／已回覆」題；按鈕經後端 pending_answer 寫回（TG 按鈕同一路徑）----
+# 欄：提出日|編號|問題|相關分頁/列|提出班次|狀態|回覆|回覆日|回覆來源|落實備註|選項(以|分隔)|TG訊息ID
+pq_rows = [r for r in rows_of("待確認", 12) if r[5] in ("待回覆", "已回覆")]
+pq_open = [r for r in pq_rows if r[5] == "待回覆"]
+pq_open.sort(key=lambda r: ("🔴" not in r[2], d_key(r)))
+pq_done = [r for r in pq_rows if r[5] == "已回覆"]
+
+
+def pq_html():
+    if not pq_rows:
+        return ""
+    parts = []
+    for r in pq_open:
+        opts = [o.strip() for o in str(r[10]).split("|") if o.strip()]
+        btns = "".join(f'<button type="button" class="pqb" data-q="{esc(r[1])}" data-a="{esc(o)}">{esc(o)}</button>'
+                       for o in opts if "＿" not in o and "__" not in o)
+        parts.append(
+            f'<div class="pq" id="pq-{esc(r[1])}"><div class="pq-q"><b>{esc(r[1])}</b> {esc(r[2])}'
+            f'<span class="pq-ref">{esc(r[3])}｜{esc(r[0])}提出</span></div>'
+            f'<div class="pq-act">{btns}<input class="pqi" placeholder="或輸入回答（例：延到10/20）">'
+            f'<button type="button" class="pqb pqs" data-q="{esc(r[1])}">送出</button><span class="pq-msg"></span></div></div>')
+    for r in pq_done:
+        parts.append(f'<div class="pq pq-ok"><b>{esc(r[1])}</b> {esc(r[2])}<div class="pq-ans">✅ 已回覆「{esc(r[6])}」'
+                     f'（{esc(r[8])}）— 下一班次自動落實</div></div>')
+    return ('<details class="sec pqsec" id="sec-pq" open><summary>👆 待你確認<span class="cnt">'
+            + str(len(pq_open)) + '</span></summary>'
+            + '<div style="padding:4px 14px;color:#666;font-size:.82em">只剩里程碑／費用歸屬／公司決策三類題；點按鈕或輸入即寫回雲端，'
+              'Telegram 也有同樣按鈕。14 天未回會自動關閉。</div>' + "".join(parts) + '</details>')
+
+
 
 def d_key(r):
     d = parse_date(r[0])
@@ -943,6 +973,8 @@ _wx_t = wx_by_date.get(TODAY)
 wx_today_str = f"{_wx_t['icon']}{_wx_t['tmax']:.0f}°" if _wx_t else ""
 failed_hint = ("｜最急：" + esc(dispatch_failed_disp[0]["vendor"])) if dispatch_failed_disp else ""
 _sl = []
+if pq_open:
+    _sl.append(f'<a href="#sec-pq" onclick="secopen(\'sec-pq\')">👆待你確認{len(pq_open)}</a>')
 if dispatch_unverified:
     _sl.append(f'<a href="#sec-dispatch" onclick="secopen(\'sec-dispatch\')">🔴應出未回報{len(dispatch_unverified)}</a>')
 if dispatch_failed_disp or admin_failed:
@@ -1054,6 +1086,15 @@ tr.edited .eb {{ opacity:1; }}
   .sec summary {{ font-size:.92em; padding:10px 12px; }}
   .badge {{ font-size:.78em; }}
 }}
+.pqsec {{ border-left:4px solid #2e86c1; }}
+.pq {{ padding:8px 14px; border-top:1px solid var(--line, #eee); }}
+.pq-q {{ line-height:1.5; }} .pq-ref {{ color:#888; font-size:.8em; margin-left:6px; }}
+.pq-act {{ margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }}
+.pqb {{ padding:6px 12px; border:1px solid #2e86c1; background:#eaf2fb; color:#1b4f72; border-radius:16px; cursor:pointer; font-size:.9em; }}
+.pqb:disabled {{ opacity:.5; }} .pqs {{ background:#2e86c1; color:#fff; }}
+.pqi {{ flex:1 1 180px; min-width:0; padding:6px 8px; border:1px solid #ccc; border-radius:6px; font-size:.9em; }}
+.pq-msg {{ font-size:.85em; color:#c0392b; }} .pq-ok {{ opacity:.7; }} .pq-ans {{ color:#1e8449; font-size:.88em; margin-top:2px; }}
+.pq.sent {{ opacity:.6; }}
 @media print {{ .sec {{ break-inside:avoid; }} }}
 </style></head><body>
 <header><h1>93H 海興段 進度儀表板</h1>
@@ -1062,6 +1103,7 @@ tr.edited .eb {{ opacity:1; }}
 <div class="wrap">
 <div class="msbar">{''.join(ms_html)}</div>
 {statusline}
+{pq_html()}
 <div class="zone">日常追蹤</div>
 <details class="sec dispatch" id="sec-dispatch"><summary>👷 出工預核與回報<span style="font-weight:400;color:#555;margin-left:8px">{esc(wx_today_str)}　今日已報{len(today_filled)}組</span><span class="cnt">{len(dispatch_future_disp)}</span></summary>{unverified_html}{today_html}{weather_html()}{future_html}</details>
 {'<details class="sec"><summary>🤝 廠商協調（送樣/圖說/工序/到場，未定案）<span class="cnt">' + str(len(coord_open)) + '</span></summary><table><tr><th>日期</th><th>廠商</th><th>類型</th><th>事項</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0]) or '—'}</td><td><b>{esc(r[1])}</b>{ebtn('廠商協調', r.rn, r[1], f'{r[1]} {r[3]}', r)}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td>{esc(r[4])}</td><td class='note'>{esc(r[5])}</td></tr>" for r in coord_open) + '</table></details>' if coord_open else ''}
@@ -1139,6 +1181,35 @@ tr.edited .eb {{ opacity:1; }}
       ok.disabled=false; ok.textContent="送出寫回雲端";
     }}).catch(function(e){{ msg.textContent="連線失敗："+e; ok.disabled=false; ok.textContent="送出寫回雲端"; }});
   }};
+}})();
+</script>
+<script>
+(function(){{
+  // 👆 待你確認：POST pending_answer（後端 v13）；舊後端不支援就隱藏按鈕改提示
+  var API="__API__";
+  var sec=document.getElementById("sec-pq"); if(!sec) return;
+  fetch(API+"?ver=1").then(function(r){{ return r.json(); }}).then(function(j){{
+    if(!(j && j.features && j.features.indexOf("pending_answer")>=0)){{
+      sec.querySelectorAll(".pq-act").forEach(function(a){{ a.innerHTML='<span class="pq-msg">後端尚未更新，請先用 Telegram 或 Sheet 回覆</span>'; }});
+    }}
+  }}).catch(function(){{}});
+  function send(q,a,box){{
+    var msg=box.querySelector(".pq-msg"); var bs=box.querySelectorAll("button"); bs.forEach(function(b){{ b.disabled=true; }});
+    msg.style.color="#555"; msg.textContent="寫入中…";
+    fetch(API,{{method:"POST",body:JSON.stringify({{key:"93h",type:"pending_answer",qid:q,answer:a,source:"儀表板(玲嬅)"}})}})
+      .then(function(r){{ return r.text(); }}).then(function(t){{
+        var j; try{{ j=JSON.parse(t); }}catch(e){{ j={{ok:true,note:"回應非JSON，可能已寫入"}}; }}
+        if(j.ok){{ box.classList.add("sent"); box.querySelector(".pq-act").innerHTML='<span class="pq-ans">✅ 已送出「'+a.replace(/</g,"&lt;")+'」，下一班次自動落實</span>'; }}
+        else {{ msg.style.color="#c0392b"; msg.textContent="失敗："+j.err; bs.forEach(function(b){{ b.disabled=false; }}); }}
+      }}).catch(function(e){{ msg.textContent="連線失敗："+e; bs.forEach(function(b){{ b.disabled=false; }}); }});
+  }}
+  sec.addEventListener("click",function(ev){{
+    var b=ev.target.closest(".pqb"); if(!b) return; ev.preventDefault();
+    var box=b.closest(".pq"); var q=b.getAttribute("data-q");
+    var a=b.classList.contains("pqs")? box.querySelector(".pqi").value.trim() : b.getAttribute("data-a");
+    if(!a){{ box.querySelector(".pq-msg").textContent="請先輸入回答"; return; }}
+    send(q,a,box);
+  }});
 }})();
 </script>
 <script>

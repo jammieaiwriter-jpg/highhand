@@ -21,7 +21,8 @@
         --base：代理先前讀的快照；若目標分頁在此期間被人改過，該分頁整頁放棄不寫。
         --dry-run：只算差異不寫。寫入模式檔 _state/write_mode.txt 為 dry 時，一律視為 --dry-run。
   python h93_tools.py pending list [--all]
-  python h93_tools.py pending add --q "問題" [--ref "出工預核 r168"] [--run-id R]
+  python h93_tools.py pending add --q "問題" [--options "能|延到＿＿|不知"] [--ref "出工預核 r168"] [--run-id R]
+        （10/7 起只開里程碑／費用歸屬／公司決策題；--options 會變成 Telegram 與儀表板的按鈕，後端每 5 分鐘自動推送）
   python h93_tools.py pending answer <編號> --text "回覆" [--source "TG 9/11 21:10"]
   python h93_tools.py pending close <編號> [--note "已寫入出工預核 r168"]
         「待確認」分頁＝人機回饋隊列（玲嬅也可直接在 Sheet 填回覆欄）。
@@ -72,7 +73,9 @@ CHANGELOG_HDR = ["日期", "項目", "變更內容", "來源"]
 PROTECTED = {"說明"}                      # 永不寫
 PENDING = "待確認"
 PENDING_HDR = ["提出日", "編號", "問題", "相關分頁/列", "提出班次", "狀態",
-               "回覆", "回覆日", "回覆來源", "落實備註"]
+               "回覆", "回覆日", "回覆來源", "落實備註", "選項", "TG訊息ID"]
+# 選項：以 | 分隔的按鈕文字（TG inline 按鈕與儀表板👆區共用；含「＿」的選項不出按鈕、改請手打）。
+# TG訊息ID：後端 pendingPush_ 推出帶按鈕訊息後回填，空白＝尚未推送。
 
 HELP_EDITS = """變更單（JSON，UTF-8）格式：
 {
@@ -520,6 +523,9 @@ def _pending_grid(wb):
     for row in g:
         while len(row) < len(PENDING_HDR):
             row.append(None)
+    for k, h in enumerate(PENDING_HDR):   # 舊表頭補新欄名
+        if not norm(g[0][k]):
+            g[0][k] = h
     return g
 
 
@@ -563,7 +569,7 @@ def cmd_pending(args):
             out({"action": "add", "skipped": f"同一問題已在隊列 {dup[0]}"})
             return
         g.append([roc_today(), qid, q, argval(args, "--ref", ""), argval(args, "--run-id", ""),
-                  "待回覆", "", "", "", ""])
+                  "待回覆", "", "", "", "", argval(args, "--options", ""), ""])
         if write_mode() == "dry" and "--force-live" not in args:
             out({"action": "add", "dry_run": True, "would_add": g[-1]})
             return
