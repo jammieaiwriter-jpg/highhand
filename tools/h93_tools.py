@@ -663,18 +663,27 @@ def cmd_rebuild(args):
         out(res)
         return
     git(*ident, "commit", "-m", msg, "--quiet")
-    p = git("pull", "--rebase", "--quiet")
-    if p.returncode != 0:
+    # 2026-10-08：雲端 routine 的 checkout 是 detached HEAD，`git pull --rebase` 在無分支狀態直接失敗
+    # （10/8 10:55 場 REBASE FAILED 根因）。一律明確 fetch → rebase 到 origin/main → push HEAD:main。
+    # 衝突只會發生在產出檔；rebase 中「--theirs」＝本次重放的提交（剛重產的新版），以它為準。
+    git("fetch", "--quiet", "origin", "main")
+    p = git(*ident, "rebase", "origin/main")
+    for _ in range(5):
+        if p.returncode == 0:
+            break
+        if not os.path.isdir(os.path.join(REPO, ".git", "rebase-merge")) and \
+                not os.path.isdir(os.path.join(REPO, ".git", "rebase-apply")):
+            break
         git("checkout", "--theirs", "--", "93h/index.html", "93h/report/plan.json", "tools/builder.py")
         git("add", "-A")
-        c = subprocess.run(["git", *ident, "rebase", "--continue"], cwd=REPO, capture_output=True, text=True,
+        p = subprocess.run(["git", *ident, "rebase", "--continue"], cwd=REPO, capture_output=True, text=True,
                            env=dict(os.environ, GIT_EDITOR="true"))
-        if c.returncode != 0:
-            git("rebase", "--abort")
-            res.update(pushed=False, error="REBASE FAILED")
-            out(res)
-            return
-    ps = git("push", "--quiet")
+    if p.returncode != 0:
+        git("rebase", "--abort")
+        res.update(pushed=False, error="REBASE FAILED", detail=(p.stdout + p.stderr)[-300:])
+        out(res)
+        return
+    ps = git("push", "--quiet", "origin", "HEAD:main")
     res.update(pushed=ps.returncode == 0, push_err=ps.stderr[-300:] if ps.returncode else "",
                head=git("rev-parse", "--short", "HEAD").stdout.strip())
     out(res)
