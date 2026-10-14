@@ -625,6 +625,30 @@ MS_ORDER = [
     ("報完工", date(2026, 12, 30), "總經理指示：使照前完成，不卡使照", date(2026, 12, 30), False, False),
     ("使照後二工", date(2027, 4, 30), "使照後施作：二工件＋公設裝潢＋樣品屋3A1/13A3＋接待中心S1(先建後售,代銷進駐)", date(2027, 4, 30), False, False),
 ]
+# ---- 2026-10-14：里程碑正本移到雲端 Sheet「里程碑」分頁（雲端班次可依玲嬅🔴題回覆直接落實）----
+# 欄：名稱|日期|說明|已完成日|樹狀分組。讀得到就以 Sheet 為準；上方 MILESTONES／MILESTONES_DONE 與本處 MS_ORDER 日期只當備援。
+# 「樹狀分組」填 MS_ORDER 的名稱（1F門禁／拆架2-7F…）→ 該分組的顯示日與逾期判定日跟著這列走。
+MS_SRC = "py常數(備援)"
+if "里程碑" in wb.sheetnames:
+    _ms_rows = []
+    for _r in wb["里程碑"].iter_rows(min_row=2, values_only=True):
+        _v = [txt(x) for x in (list(_r or []) + [None] * 5)[:5]]
+        _d = parse_date(_v[1])
+        if _v[0] and _d:
+            _ms_rows.append(_v + [_d])
+    if _ms_rows:
+        MILESTONES = [(v[0], v[5], v[2]) for v in _ms_rows]
+        MILESTONES_DONE = {}
+        for v in _ms_rows:
+            _dd = parse_date(v[3])
+            if _dd:
+                MILESTONES_DONE[v[0]] = _dd
+                if v[4]:
+                    MILESTONES_DONE[v[4]] = _dd
+        _tree = {v[4]: v for v in _ms_rows if v[4]}
+        MS_ORDER = [(n, _tree[n][5], _tree[n][2] or nt, _tree[n][5], o, rk) if n in _tree else (n, d, nt, dl, o, rk)
+                    for n, d, nt, dl, o, rk in MS_ORDER]
+        MS_SRC = "雲端Sheet「里程碑」"
 GATING_MS = {"1F門禁", "拆架2-7F", "拆架1-2F", "消防檢查", "使照檢查"}
 MS_ICON = {"報完工": "📦", "使照後二工": "🔧", "景觀工程": "🌿"}
 MS_LABEL = {"報完工": "使照前完整度", "1F門禁": "門禁(1F/MF/2F)"}
@@ -688,6 +712,8 @@ for name, d, note in MILESTONES:
     cls = "ms-past" if delta < 0 else ("ms-hot" if delta <= 30 else "ms-ok")
     cd = f"逾{-delta}天" if delta < 0 else f"剩{delta}天"
     if name in MILESTONES_DONE:
+        if (TODAY - MILESTONES_DONE[name]).days > 14:   # 完成超過兩週就不佔頂部欄位
+            continue
         cls, cd = "ms-ok", f"✅已完成 {minguo(MILESTONES_DONE[name])}"
     ms_html.append(
         f'<div class="ms {cls}"><div class="ms-date">{minguo(d)}</div>'
@@ -695,7 +721,8 @@ for name, d, note in MILESTONES:
         f'<div class="ms-cd">{cd}</div>'
         + (f'<div class="ms-note">{esc(note)}</div>' if note else "") + "</div>")
 
-license_day = (MILESTONES[-1][1] - TODAY).days
+_lic = [d for n, d, _ in MILESTONES if "使用執照" in n or "使照取得" in n] or [MILESTONES[-1][1]]
+license_day = (_lic[0] - TODAY).days
 
 work_93h = [r for r in work_rows if r[0] in ("海興段", "其他", "")]
 work_other = [r for r in work_rows if r[0] not in ("海興段", "其他", "")]
@@ -1099,7 +1126,7 @@ tr.edited .eb {{ opacity:1; }}
 @media print {{ .sec {{ break-inside:avoid; }} }}
 </style></head><body>
 <header><h1>93H 海興段 進度儀表板</h1>
-<div class="sub">產出：{minguo(TODAY)}（{TODAY.isoformat()}）｜資料：{esc(SRC_LABEL)}｜距取得使照 <b>{license_day} 天</b></div>
+<div class="sub">產出：{minguo(TODAY)}（{TODAY.isoformat()}）｜資料：{esc(SRC_LABEL)}｜里程碑：{esc(MS_SRC)}｜距取得使照 <b>{license_day} 天</b></div>
 </header>
 <div class="wrap">
 <div class="msbar">{''.join(ms_html)}</div>
