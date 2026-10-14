@@ -368,7 +368,8 @@ dispatch_failed = sorted(
 mat_all = rows_of("進料追蹤", 6)
 mat_upcoming = sorted(
     [r for r in mat_all
-     if parse_date(r[0]) == TODAY or ((parse_date(r[0]) or date.max) > TODAY and not r[4]) or not r[0]],
+     if parse_date(r[0]) == TODAY or ((parse_date(r[0]) or date.max) > TODAY and not r[4])
+     or (not r[0] and not r[4])],   # 10/14：沒日期的列只在「實際到料」空白時顯示（已到料者不再掛「待定」）
     key=d_key)
 mat_unverified = [r for r in mat_all if r[0] and (parse_date(r[0]) or date.max) < TODAY and not r[4]]
 
@@ -385,10 +386,41 @@ for _r in admin_all:
         _k = vbase(_r[1])
         if _d > _admin_last_done.get(_k, date.min):
             _admin_last_done[_k] = _d
+
+
+# 10/14：「完成」欄寫「改期→M/D…」＝已給新日期 → 不算待重排；新日期未到就以新日期列入行事曆（灰註原日），
+#        新日期也過了仍無完成紀錄才回到紅底改期區。
+def resched_date(r):
+    m = re.search(r"改期\s*[→>＞-]+\s*(?:(1[1-2]\d)[/.])?(\d{1,2})[/.](\d{1,2})", str(r[4]))
+    if not m:
+        return None
+    base = parse_date(r[0]) or TODAY
+    y = int(m.group(1)) + 1911 if m.group(1) else base.year
+    try:
+        d = date(y, int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+    if not m.group(1) and d < base - timedelta(days=60):   # 跨年（例 12/20 改期→1/10）
+        d = date(y + 1, d.month, d.day)
+    return d
+
+
+for _r in admin_all:
+    _nd = resched_date(_r)
+    if _nd and _nd >= TODAY and (parse_date(_r[0]) or date.max) < TODAY:
+        _v = Row(list(_r))
+        _v.rn = 0   # 虛擬列不給 ✏️（原列的值已不同）
+        _v[0] = f"0{_nd.year - 1911}/{_nd.month}/{_nd.day}"
+        _v[4] = ""
+        _v[5] = f"（原{_r[0]}，{_r[4]}）" + (("；" + _r[5]) if _r[5] else "")
+        admin_upcoming.append(_v)
+admin_upcoming.sort(key=d_key)
+
 admin_failed = [r for r in admin_all
                 if r[0] and (parse_date(r[0]) or date.max) <= TODAY
                 and re.search(r"改期|未", str(r[4])) and "已重排" not in str(r[4])
-                and not (_admin_last_done.get(vbase(r[1]), date.min) > d_key(r))]
+                and not (resched_date(r) and resched_date(r) >= TODAY)
+                and not (_admin_last_done.get(vbase(r[1]), date.min) > (resched_date(r) or d_key(r)))]
 
 decisions = [r for r in rows_of("待裁決", 6) if not r[3]]
 
