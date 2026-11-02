@@ -293,6 +293,41 @@ dispatch_all = rows_of("出工預核", 6)
 
 # ---- 👆 待你確認（2026-10-07）：待確認分頁「待回覆／已回覆」題；按鈕經後端 pending_answer 寫回（TG 按鈕同一路徑）----
 # 欄：提出日|編號|問題|相關分頁/列|提出班次|狀態|回覆|回覆日|回覆來源|落實備註|選項(以|分隔)|TG訊息ID
+# ---- ⭐ 重點追蹤（2026-11-02 玲嬅指定）：送審變更中的指定列，頁首置頂顯示目標日、狀態、最新動態 ----
+# 要增減重點項目改這裡（關鍵字比對「送審變更」第 1 欄）。
+FOCUS_KEYS = [("台電拆臨時電桶", "臨時電桶"), ("消防變更", "消防變更設計")]
+_review_rows = rows_of("送審變更", 7)
+
+
+def focus_html():
+    cards = []
+    for label, key in FOCUS_KEYS:
+        hit = [r for r in _review_rows if key in r[0]]
+        if not hit:
+            continue
+        r = hit[0]
+        done = bool(str(r[4]).strip())
+        tgt = parse_date(r[3])
+        if done:
+            badge, cls = "✅ " + esc(r[4])[:30], "ms-ok"
+        elif tgt:
+            dd = (tgt - TODAY).days
+            badge = (f"逾{-dd}天" if dd < 0 else f"剩{dd}天")
+            cls = "ms-past" if dd < 0 else ("ms-hot" if dd <= 14 else "ms-ok")
+        else:
+            badge, cls = "目標日未定", "ms-hot"
+        segs = [x.strip() for x in re.split(r"[；]", str(r[6])) if x.strip()]
+        latest = segs[-1] if segs else ""
+        cards.append(
+            f'<div class="fc {cls}"><div class="fc-h">⭐ {esc(label)}<span class="fc-b">{badge}</span></div>'
+            f'<div class="fc-r"><b>送件／現況</b> {esc(r[2])}</div>'
+            f'<div class="fc-r"><b>目標</b> {esc(r[3])}　<b>單位</b> {esc(r[1])}</div>'
+            f'<div class="fc-n">最新：{esc(latest[-160:])}</div></div>')
+    if not cards:
+        return ""
+    return '<div class="fcbar">' + "".join(cards) + "</div>"
+
+
 pq_rows = [r for r in rows_of("待確認", 12) if r[5] in ("待回覆", "已回覆")]
 pq_open = [r for r in pq_rows if r[5] == "待回覆"]
 pq_open.sort(key=lambda r: ("🔴" not in r[2], parse_date(r[0]) or date.max))
@@ -1146,6 +1181,12 @@ tr.edited .eb {{ opacity:1; }}
   .sec summary {{ font-size:.92em; padding:10px 12px; }}
   .badge {{ font-size:.78em; }}
 }}
+.fcbar {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; margin:10px 0; }}
+.fc {{ background:#fff; border:1px solid #e3e3e3; border-top:5px solid var(--green); border-radius:8px; padding:10px 12px; }}
+.fc.ms-hot {{ border-top-color:var(--orange); }} .fc.ms-past {{ border-top-color:var(--red); }}
+.fc-h {{ font-weight:700; font-size:1.02em; display:flex; justify-content:space-between; gap:8px; }}
+.fc-b {{ font-weight:700; font-size:.9em; }} .fc.ms-past .fc-b {{ color:var(--red); }} .fc.ms-hot .fc-b {{ color:var(--orange); }}
+.fc-r {{ font-size:.86em; margin-top:4px; }} .fc-n {{ font-size:.8em; color:#555; margin-top:6px; line-height:1.45; }}
 .pqsec {{ border-left:4px solid #2e86c1; }}
 .pq {{ padding:8px 14px; border-top:1px solid var(--line, #eee); }}
 .pq-q {{ line-height:1.5; }} .pq-ref {{ color:#888; font-size:.8em; margin-left:6px; }}
@@ -1163,6 +1204,7 @@ tr.edited .eb {{ opacity:1; }}
 <div class="wrap">
 <div class="msbar">{''.join(ms_html)}</div>
 {statusline}
+{focus_html()}
 {pq_html()}
 <div class="zone">日常追蹤</div>
 <details class="sec dispatch" id="sec-dispatch"><summary>👷 出工預核與回報<span style="font-weight:400;color:#555;margin-left:8px">{esc(wx_today_str)}　今日已報{len(today_filled)}組</span><span class="cnt">{len(dispatch_future_disp)}</span></summary>{unverified_html}{today_html}{weather_html()}{future_html}</details>
