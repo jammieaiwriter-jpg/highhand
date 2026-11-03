@@ -154,7 +154,7 @@ textarea{resize:vertical; min-height:60px;}
     <h3>📷 照片回報</h3>
     <p class="hint">一組＝一個「位置／工種／內容」＋照片。定稿會產生說明行（照片照舊貼LINE）；
     按「回傳公司」時照片會自動存進公司雲端「日期／位置_工種_內容」資料夾。
-    ⚠️ 照片不會存進草稿，重新整理頁面會清掉，請當次填完送出。</p>
+    💾 照片與內容會自動存草稿，重新整理或關掉再開會自動帶回（保留3天）。</p>
     <div id="photo-groups"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup('pm')">＋ 加一組照片</button>
@@ -174,7 +174,7 @@ textarea{resize:vertical; min-height:60px;}
   </div>
   <div class="card">
     <h3>逐點紀錄（位置＋交辦/缺失＋照片）</h3>
-    <p class="hint">長官走到哪記到哪，一點一張卡。⚠️ 照片不進草稿，重新整理會清掉，請當次定稿送出。</p>
+    <p class="hint">長官走到哪記到哪，一點一張卡。💾 逐點內容與照片自動存草稿，關掉再開會自動帶回（保留3天）。</p>
     <div id="sv-groups"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup('sv')">＋ 加一點</button>
@@ -445,7 +445,7 @@ function buildPmText(){
   return lines.join("\n").replace(/\n{3,}/g,"\n\n");
 }
 
-/* ============ 照片群組：pm=收工照片、sv=會勘逐點（不進localStorage，重整會清掉） ============ */
+/* ============ 照片群組：pm=收工照片、sv=會勘逐點（草稿存 IndexedDB，見 savePG） ============ */
 const PGS={pm:[], sv:[]};
 const PG_BOX={pm:"photo-groups", sv:"sv-groups"};
 const photoGroups=PGS.pm;   // 舊名沿用
@@ -469,13 +469,13 @@ function renderPhotoGroups(key){
     const fid="file-"+key+"-"+g;
     const fields = key==="sv"
       ? '<div class="q-no">第 '+(g+1)+' 點</div>'+
-        '<div style="margin-top:4px;"><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、B2F廢水池" oninput="PGS.sv['+g+'].loc=this.value"></div>'+
-        '<div style="margin-top:6px;"><label>交辦/缺失內容</label><textarea rows="2" placeholder="長官交辦或發現的缺失" oninput="PGS.sv['+g+'].desc=this.value">'+esc(pg.desc)+'</textarea></div>'
+        '<div style="margin-top:4px;"><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、B2F廢水池" oninput="PGS.sv['+g+'].loc=this.value;savePG()"></div>'+
+        '<div style="margin-top:6px;"><label>交辦/缺失內容</label><textarea rows="2" placeholder="長官交辦或發現的缺失" oninput="PGS.sv['+g+'].desc=this.value;savePG()">'+esc(pg.desc)+'</textarea></div>'
       : '<div class="row">'+
-        '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="PGS.pm['+g+'].loc=this.value"></div>'+
-        '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="PGS.pm['+g+'].trade=this.value"></div>'+
+        '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="PGS.pm['+g+'].loc=this.value;savePG()"></div>'+
+        '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="PGS.pm['+g+'].trade=this.value;savePG()"></div>'+
         '</div>'+
-        '<div style="margin-top:6px;"><label>內容</label><input type="text" value="'+esc(pg.desc)+'" placeholder="例：破損更換後填縫" oninput="PGS.pm['+g+'].desc=this.value"></div>';
+        '<div style="margin-top:6px;"><label>內容</label><input type="text" value="'+esc(pg.desc)+'" placeholder="例：破損更換後填縫" oninput="PGS.pm['+g+'].desc=this.value;savePG()"></div>';
     div.innerHTML = fields+
       '<div class="thumbs">'+thumbs+
         '<button class="addphoto" onclick="document.getElementById(\''+fid+'\').click()">＋</button>'+
@@ -484,7 +484,65 @@ function renderPhotoGroups(key){
       '<div style="text-align:right; margin-top:6px;"><button class="btn btn-danger btn-sm" onclick="delPhotoGroup(\''+key+'\','+g+')">刪除</button></div>';
     box.appendChild(div);
   });
+  savePG();
 }
+
+/* ---- 照片群組草稿：IndexedDB（照片太大放不進localStorage），依日期分鍵，留3天 ---- */
+const PG_DB="93h-report-drafts", PG_KEY=STORE_KEY+"-pg";
+let pgTimer=null, pgReady=false, pgSent={};   // pgSent：已回傳公司的分頁，隔天不再問要不要帶回
+function pgDb(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(PG_DB,1);
+    r.onupgradeneeded=()=>r.result.createObjectStore("pg");
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  });
+}
+function pgHasContent(o,unsentOnly){ return o && ["pm","sv"].some(k=>!(unsentOnly && o.sent && o.sent[k]) && (o[k]||[]).some(pg=>pg.loc||pg.desc||pg.trade||(pg.photos||[]).length)); }
+function savePG(now){
+  if(!pgReady) return;   // 還沒載入完草稿前不寫，避免空白蓋掉
+  clearTimeout(pgTimer);
+  const run=()=>{
+    const data={ts:Date.now(), pm:PGS.pm, sv:PGS.sv, sent:pgSent};
+    pgDb().then(db=>{ const tx=db.transaction("pg","readwrite"); tx.objectStore("pg").put(data,PG_KEY); })
+      .catch(()=>{ try{ localStorage.setItem(PG_KEY, JSON.stringify({ts:data.ts,
+        pm:PGS.pm.map(pg=>Object.assign({},pg,{photos:[]})), sv:PGS.sv.map(pg=>Object.assign({},pg,{photos:[]}))})); }catch(e){} });
+  };
+  if(now) run(); else pgTimer=setTimeout(run,400);
+}
+function loadPG(){
+  const apply=o=>{ ["pm","sv"].forEach(k=>{ PGS[k].splice(0,PGS[k].length,...((o&&o[k])||[])); }); };
+  const done=()=>{ pgReady=true; renderPhotoGroups("pm"); renderPhotoGroups("sv"); };
+  pgDb().then(db=>new Promise(res=>{
+    const all={}; const cur=db.transaction("pg").objectStore("pg").openCursor();
+    cur.onsuccess=()=>{ const c=cur.result; if(c){ all[c.key]=c.value; c.continue(); } else res([db,all]); };
+    cur.onerror=()=>res([db,all]);
+  })).then(([db,all])=>{
+    const cutoff=Date.now()-3*864e5;
+    const old=Object.keys(all).filter(k=>!all[k] || all[k].ts<cutoff);
+    if(old.length){ try{ const st=db.transaction("pg","readwrite").objectStore("pg"); old.forEach(k=>st.delete(k)); }catch(e){} }
+    old.forEach(k=>delete all[k]);
+    if(pgHasContent(all[PG_KEY])){ apply(all[PG_KEY]); pgSent=all[PG_KEY].sent||{}; toast("已帶回今天的草稿"); }
+    else{
+      // 今天沒草稿：找前幾天最近一份未清掉的，問要不要帶回
+      const prev=Object.keys(all).filter(k=>k!==PG_KEY && pgHasContent(all[k],true)).sort((a,b)=>all[b].ts-all[a].ts)[0];
+      if(prev){
+        const o=all[prev], d=new Date(o.ts);
+        const n=(o.sv||[]).length, m=(o.pm||[]).length;
+        if(confirm("找到 "+(d.getMonth()+1)+"/"+d.getDate()+" 未送出的草稿（會勘 "+n+" 點、收工照片 "+m+" 組），要帶回嗎？")) apply(o);
+      }
+    }
+    done();
+  }).catch(()=>{
+    try{ const s=localStorage.getItem(PG_KEY); if(s) apply(JSON.parse(s)); }catch(e){}
+    done();
+  });
+}
+function clearPG(){
+  PGS.pm.length=0; PGS.sv.length=0;
+  renderPhotoGroups("pm"); renderPhotoGroups("sv"); savePG(true);
+}
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") savePG(true); });
+window.addEventListener("pagehide",()=>savePG(true));
 function addPhotos(key,g,input){
   const files=Array.from(input.files||[]);
   if(!files.length) return;
@@ -769,6 +827,7 @@ function sendToServer(){
         }
       }
     }
+    if(srcKey){ pgSent[srcKey]=true; savePG(true); }
     st.textContent="✅ 已回傳公司"+(jobs.length? "，照片"+jobs.length+"張已歸檔":"")+"（"+new Date().toLocaleTimeString()+"）";
     btn.textContent="✅ 已回傳"; btn.style.opacity="";
     toast("已回傳公司");
@@ -805,6 +864,7 @@ document.getElementById("sv-note").value=state.svNote||"";
 document.getElementById("sv-note").addEventListener("input",e=>{state.svNote=e.target.value;save();});
 renderWorkers();
 renderQuestions();
+loadPG();
 switchTab(state.tab||"am");
 loadPlan();
 </script>
