@@ -190,6 +190,7 @@ textarea{resize:vertical; min-height:60px;}
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm" onclick="addPhotoGroup('sv')">＋ 加一點</button>
       <button class="btn btn-primary btn-sm" onclick="makePhotoReport('sv')">🧾 產出會勘報告(JPG)</button>
+      <button class="btn btn-primary btn-sm" onclick="exportSvWord()">📝 匯出 Word</button>
     </div>
   </div>
 </div>
@@ -482,7 +483,9 @@ function renderPhotoGroups(key){
       ? '<div class="q-no">第 '+(g+1)+' 點'+(svTodo(pg)?'　⚠️ 尚未記錄':'')+'</div>'+
         '<div style="margin-top:4px;"><label>議題</label><input type="text" value="'+esc(pg.topic||"")+'" placeholder="（選填）事先要看/討論的事" oninput="PGS.sv['+g+'].topic=this.value;savePG()"></div>'+
         '<div style="margin-top:6px;"><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、B2F廢水池" oninput="PGS.sv['+g+'].loc=this.value;savePG()"></div>'+
-        '<div style="margin-top:6px;"><label>交辦/缺失內容</label><textarea rows="2" placeholder="長官交辦或發現的缺失" oninput="PGS.sv['+g+'].desc=this.value;svMark(this,'+g+');savePG()">'+esc(pg.desc)+'</textarea></div>'
+        '<div style="margin-top:6px;"><label>狀態</label><select onchange="PGS.sv['+g+'].status=this.value;savePG()">'+
+          ['','已確認','待追蹤'].map(v=>'<option value="'+v+'"'+((pg.status||'')===v?' selected':'')+'>'+(v||'自動（有寫＝已確認）')+'</option>').join('')+'</select></div>'+
+        '<div style="margin-top:6px;"><label>交辦/缺失內容（結論）</label><textarea rows="2" placeholder="長官交辦或發現的缺失" oninput="PGS.sv['+g+'].desc=this.value;svMark(this,'+g+');savePG()">'+esc(pg.desc)+'</textarea></div>'
       : '<div class="row">'+
         '<div><label>位置</label><input type="text" value="'+esc(pg.loc)+'" placeholder="例：1F大廳、12A2主浴" oninput="PGS.pm['+g+'].loc=this.value;savePG()"></div>'+
         '<div><label>工種</label><input type="text" list="vendor-list" value="'+esc(pg.trade)+'" placeholder="例：壁磚工程" oninput="PGS.pm['+g+'].trade=this.value;savePG()"></div>'+
@@ -499,6 +502,395 @@ function renderPhotoGroups(key){
   if(key==="sv") svProgress();
   savePG();
 }
+
+/* ============ 會勘 → Word（版面沿用舊版 meeting-records 的「工地巡視會勘紀錄表」） ============ */
+const SV_UNIT="93H海興段";
+function svStatus(pg){ return pg.status || (svTodo(pg) ? "未記錄" : "已確認"); }
+async function exportSvWord(){
+  const pts=PGS.sv.filter(pg=>pg.loc||pg.desc||pg.topic||pg.photos.length);
+  if(!pts.length){ toast("還沒有逐點紀錄"); return; }
+  toast("產生 Word 中…");
+  try{
+    const d=new Date();
+    const date=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const items=pts.map(pg=>({
+      topic: pg.topic ? pg.topic+(pg.loc? "（"+pg.loc+"）":"") : (pg.loc||"現場新增")+" ★現場新增",
+      conclusion: (pg.desc||"").trim(),
+      status: svStatus(pg),
+      photos: pg.photos }));
+    const session={unit:SV_UNIT, officer:document.getElementById("sv-inspector").value.trim()||"—",
+      escort:document.getElementById("sv-note").value.trim(), org:"", date:date};
+    const images=await prepareDocxImages(items);
+    const blob=buildDocxBlob(buildSvDocxXml(items, session, images), images);
+    const fname="會勘紀錄_"+SV_UNIT+"_"+date+".docx";
+    const file=new File([blob], fname, {type:blob.type});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file], title:fname}); return; }catch(e){ if(e.name==="AbortError") return; }
+    }
+    downloadBlob(blob, fname);
+    toast("✅ Word 已下載："+fname);
+  }catch(e){ console.error(e); toast("❌ 產生失敗："+e.message); }
+}
+function downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=filename; a.rel="noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+// ══ 以下 docx/zip 底層照搬舊版 meeting-records ══
+function buildSvDocxXml(items, session, docxImages) {
+  const endTime = new Date();
+  const doneN = items.filter(i=>i.status==="已確認").length;
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const statusText = item => item.status;
+  const imageXml = img => `
+        <w:p><w:pPr><w:spacing w:before="80" w:after="80"/></w:pPr><w:r><w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${img.cx}" cy="${img.cy}"/>
+            <wp:docPr id="${img.docPrId}" name="現場照片 ${img.docPrId}"/>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr><pic:cNvPr id="0" name="${esc(img.filename)}"/><pic:cNvPicPr/></pic:nvPicPr>
+                  <pic:blipFill><a:blip r:embed="${img.rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${img.cx}" cy="${img.cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing></w:r></w:p>`;
+
+  // Build table rows for each item
+  let itemRows = '';
+  items.forEach((item, i) => {
+    const concl = item.conclusion || '（未填寫）';
+    const itemImages = docxImages.filter(img => img.itemIndex === i);
+    const photoBlocks = itemImages.map(imageXml).join('');
+    itemRows += `
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="E8EAED"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>${i+1}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="6026" w:type="dxa"/><w:shd w:val="clear" w:fill="E8EAED"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(item.topic)}${item.isExtra?' ★臨時新增':''}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/><w:shd w:val="clear" w:fill="${item.status==='已確認'?'D4EDDA':(item.status==='未記錄'?'F8D7DA':'FFF3CD')}"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="18"/></w:rPr><w:t>${esc(statusText(item))}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="F8F8F8"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>結論</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/>${!item.conclusion?'<w:color w:val="AAAAAA"/>':''}</w:rPr><w:t xml:space="preserve">${esc(concl)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    ${photoBlocks ? `<w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="F8F8F8"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>照片</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="7826" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr>
+        ${photoBlocks}</w:tc>
+    </w:tr>` : ''}`;
+  });
+
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<w:body>
+  <!-- Title -->
+  <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="120"/></w:pPr>
+    <w:r><w:rPr><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr><w:t>工地巡視會勘紀錄表</w:t></w:r></w:p>
+  <!-- Meta table -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2163"/><w:gridCol w:w="2000"/><w:gridCol w:w="2163"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>巡視單位</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.unit)}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>主持長官</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.officer)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>陪同人員</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.escort||'—')}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>會勘日期</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.date)}</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>主辦單位</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${esc(session.org||'—')}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:fill="F0EDE6"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t>討論事項</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2163" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>${items.length} 項（${doneN} 已確認）</w:t></w:r></w:p></w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="160" w:after="0"/></w:pPr></w:p>
+  <!-- Items table -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="6026"/><w:gridCol w:w="1800"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>#</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="6026" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>討論事項</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="1800" w:type="dxa"/><w:shd w:val="clear" w:fill="1C1A16"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="F5F0E8"/><w:sz w:val="20"/></w:rPr><w:t>狀態</w:t></w:r></w:p></w:tc>
+    </w:tr>
+    ${itemRows}
+  </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="240" w:after="0"/></w:pPr></w:p>
+  <!-- Signature line -->
+  <w:tbl>
+    <w:tblPr><w:tblW w:w="8326" w:type="dxa"/><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/>
+      <w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+    </w:tblBorders></w:tblPr>
+    <w:tblGrid><w:gridCol w:w="3326"/><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid>
+    <w:tr>
+      <w:tc><w:tcPr><w:tcW w:w="3326" w:type="dxa"/></w:tcPr>
+        <w:p><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="888888"/></w:rPr><w:t>製表：${esc(endTime.getFullYear()+'/'+String(endTime.getMonth()+1).padStart(2,'0')+'/'+String(endTime.getDate()).padStart(2,'0')+' '+String(endTime.getHours()).padStart(2,'0')+':'+String(endTime.getMinutes()).padStart(2,'0'))}</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2500" w:type="dxa"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="480"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>主持長官簽名</w:t></w:r></w:p></w:tc>
+      <w:tc><w:tcPr><w:tcW w:w="2500" w:type="dxa"/></w:tcPr>
+        <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="480"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t>紀錄人員簽名</w:t></w:r></w:p></w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:sectPr>
+    <w:pgSz w:w="11906" w:h="16838"/>
+    <w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>
+  </w:sectPr>
+</w:body></w:document>`;
+
+  return docXml;
+}
+
+function strToUint8(str) {
+  return new TextEncoder().encode(str);
+}
+
+function dataUrlToBytes(dataUrl) {
+  const parts = dataUrl.split(',');
+  const meta = parts[0] || '';
+  const mime = (meta.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const binary = atob(parts[1] || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return { bytes, mime };
+}
+
+function getImageInfo(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+    img.onerror = () => resolve({ width: 1200, height: 900 });
+    img.src = src;
+  });
+}
+
+async function prepareDocxImages(items) {
+  const images = [];
+  let n = 1;
+  for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+    const item = items[itemIndex];
+    for (let photoIndex = 0; photoIndex < item.photos.length; photoIndex++) {
+      const src = item.photos[photoIndex].dataUrl || item.photos[photoIndex];
+      const { bytes, mime } = dataUrlToBytes(src);
+      const ext = mime.includes('png') ? 'png' : 'jpg';
+      const info = await getImageInfo(src);
+      const maxCx = 4320000;
+      const maxCy = 3240000;
+      const ratio = info.width / Math.max(info.height, 1);
+      let cx = maxCx;
+      let cy = Math.round(maxCx / ratio);
+      if (cy > maxCy) {
+        cy = maxCy;
+        cx = Math.round(maxCy * ratio);
+      }
+      images.push({
+        itemIndex,
+        photoIndex,
+        rid: `rIdImg${n}`,
+        docPrId: 1000 + n,
+        filename: `photo_${itemIndex + 1}_${photoIndex + 1}.${ext}`,
+        bytes,
+        mime,
+        cx,
+        cy
+      });
+      n++;
+    }
+  }
+  return images;
+}
+
+let crcTable = null;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      crcTable[n] = c >>> 0;
+    }
+  }
+  let crc = 0 ^ -1;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+  return (crc ^ -1) >>> 0;
+}
+
+function u16(n) {
+  const b = new Uint8Array(2);
+  b[0] = n & 255;
+  b[1] = (n >>> 8) & 255;
+  return b;
+}
+
+function u32(n) {
+  const b = new Uint8Array(4);
+  b[0] = n & 255;
+  b[1] = (n >>> 8) & 255;
+  b[2] = (n >>> 16) & 255;
+  b[3] = (n >>> 24) & 255;
+  return b;
+}
+
+function concatBytes(parts) {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach(p => {
+    out.set(p, offset);
+    offset += p.length;
+  });
+  return out;
+}
+
+function dosTimeDate(d) {
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  return { time, date };
+}
+
+function createZip(files) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const now = dosTimeDate(new Date());
+
+  files.forEach(file => {
+    const nameBytes = strToUint8(file.name);
+    const data = typeof file.data === 'string' ? strToUint8(file.data) : file.data;
+    const crc = crc32(data);
+    const local = concatBytes([
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), nameBytes, data
+    ]);
+    localParts.push(local);
+
+    const central = concatBytes([
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(now.time), u16(now.date),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0),
+      u16(0), u16(0), u32(0), u32(offset), nameBytes
+    ]);
+    centralParts.push(central);
+    offset += local.length;
+  });
+
+  const centralOffset = offset;
+  const central = concatBytes(centralParts);
+  const end = concatBytes([
+    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+    u32(central.length), u32(centralOffset), u16(0)
+  ]);
+  return concatBytes([...localParts, central, end]);
+}
+
+function buildDocxBlob(docXml, images = []) {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+  const imageRels = images.map(img => `
+  <Relationship Id="${img.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${img.filename}"/>`).join('');
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${imageRels}
+</Relationships>`;
+  const created = new Date().toISOString();
+  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:dcterms="http://purl.org/dc/terms/"
+  xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>工地巡視會勘紀錄表</dc:title>
+  <dc:creator>會勘紀錄工具</dc:creator>
+  <cp:lastModifiedBy>會勘紀錄工具</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>
+</cp:coreProperties>`;
+  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+  xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>會勘紀錄工具</Application>
+</Properties>`;
+
+  const files = [
+    { name: '[Content_Types].xml', data: contentTypes },
+    { name: '_rels/.rels', data: rels },
+    { name: 'word/_rels/document.xml.rels', data: docRels },
+    { name: 'word/document.xml', data: docXml },
+    { name: 'docProps/core.xml', data: core },
+    { name: 'docProps/app.xml', data: app },
+    ...images.map(img => ({ name: `word/media/${img.filename}`, data: img.bytes }))
+  ];
+  const zip = createZip(files);
+  return new Blob([zip], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
 /* ---- 會勘議題：事先貼上 → 一題一點 ---- */
 function svTodo(pg){ return !!(pg.topic && !(pg.desc||"").trim() && !pg.photos.length); }
 function svMark(el,g){   // 打字時即時更新標黃，不重繪（避免游標跳掉）
