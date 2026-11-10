@@ -15,16 +15,16 @@ HEADER = ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦", "�
 
 SAMPLE = [
     HEADER,
-    ["9/23", "10:00", "總經理", "玲嬅", 1, "1F", "YKK通風門", "門扇無法密合", 2, "建麟"],
-    ["9/23", "10:10", "總經理", "", 2, "R3", "", "R3排風扇未固定", 1, "建麟"],
-    ["9/23", "10:20", "總經理", "", 3, "3F", "Ok", "", 0, "建麟"],
-    ["9/23", "10:30", "總經理", "", 4, "4F", "已確認", "", 0, "建麟"],
-    ["9/23", "10:40", "總經理", "", 5, "5F", "再議", "", 0, "建麟"],
-    ["9/23", "10:50", "總經理", "", 6, "6F", "已確認(Ok)", "", 0, "建麟"],
-    ["11/5", "14:00", "總經理", "", 1, "管理室", "", "天花板滲水", 3, "建麟"],
-    ["11/5", "14:10", "總經理", "", 2, "S1", "石階", "高低差需修", 1, "建麟"],
-    ["11/5", "14:20", "總經理", "", 3, "3FA3", "", "客廁台面盆矽利康位置不當", 0, "建麟"],
-    ["11/5", "14:30", "總經理", "", 4, "14F", "請確認YKK門下緣", "間隙偏大", 1, "建麟"],
+    ["11/6", "10:00", "總經理", "玲嬅", 1, "1F", "YKK通風門", "門扇無法密合", 2, "建麟"],
+    ["11/6", "10:10", "總經理", "", 2, "R3", "", "R3排風扇未固定", 1, "建麟"],
+    ["11/6", "10:20", "總經理", "", 3, "3F", "Ok", "", 0, "建麟"],
+    ["11/6", "10:30", "總經理", "", 4, "4F", "已確認", "", 0, "建麟"],
+    ["11/6", "10:40", "總經理", "", 5, "5F", "再議", "", 0, "建麟"],
+    ["11/6", "10:50", "總經理", "", 6, "6F", "已確認(Ok)", "", 0, "建麟"],
+    ["11/6", "14:00", "總經理", "", 7, "管理室", "", "天花板滲水", 3, "建麟"],
+    ["11/6", "14:10", "總經理", "", 8, "S1", "石階", "高低差需修", 1, "建麟"],
+    ["11/6", "14:20", "總經理", "", 9, "3FA3", "", "客廁台面盆矽利康位置不當", 0, "建麟"],
+    ["11/6", "14:30", "總經理", "", 10, "14F", "請確認YKK門下緣", "間隙偏大", 1, "建麟"],
 ]
 
 # 盤點表現有的一列（人工抄過 11/5 會勘，備註沒有「會勘 日期#序」）
@@ -62,7 +62,11 @@ class SurveyTrackTest(unittest.TestCase):
         self.assertTrue(st.is_signoff("已確認(Ok)"))
         self.assertTrue(st.is_signoff("  "))
         self.assertFalse(st.is_signoff("請確認YKK門下緣／間隙偏大"))
+        self.assertFalse(st.is_signoff("Ok,填縫改善"))
         self.assertFalse(st.is_signoff("外牆清洗再議"))
+        self.assertTrue(st.is_deferred("外牆清洗再議"))
+        self.assertTrue(st.is_deferred("使照後要換，再議"))
+        self.assertFalse(st.is_deferred("Ok,填縫改善"))
 
     def test_adds_untracked_and_skips_signoff_and_manual(self):
         _, defects, before, result = _plan()
@@ -148,14 +152,77 @@ class SurveyTrackTest(unittest.TestCase):
         points = st.parse_survey_grid(grid, TODAY)
         self.assertEqual(len(points), 1)
 
+    def test_combined_column_and_weekday_date(self):
+        """工地回報的會勘分頁是單一欄「交辦/缺失」，日期帶星期。"""
+        grid = [
+            ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦/缺失", "照片數", "填報人"],
+            ["9/23 (三)", None, "總經理", None, 1, "R3", "電梯機房要裝排風扇", 0, "建麟"],
+            ["9/23 (三)", None, "總經理", None, 2, "3F", "Ok", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 3, None,
+             "【3FA3 客廁台面盆】合檠目前矽利康打在臉盆旁，請水電改打在臉盆底", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 4, None, "【1F路樹】使照後要換，再議", 0, "建麟"],
+        ]
+        points = st.parse_survey_grid(grid, TODAY)
+        by_seq = {p["seq"]: p for p in points}
+        self.assertEqual(by_seq[1]["content"], "電梯機房要裝排風扇")
+        self.assertEqual(by_seq[1]["date"], date(2026, 9, 23))
+        self.assertTrue(st.is_signoff(by_seq[2]["content"]))
+        self.assertEqual(by_seq[3]["loc"], "3FA3 客廁台面盆")
+        self.assertIn("矽利康", by_seq[3]["content"])
+        self.assertFalse(st.is_signoff(by_seq[4]["content"]))
+        result = st.plan_additions(points, [list(MANUAL)], TODAY)
+        added = " ".join(r[1] for r in result["add"])
+        self.assertNotIn("電梯機房要裝排風扇", added)  # 9/23，早於入帳日起算
+        self.assertNotIn("矽利康", added)
+        self.assertTrue(any(s["reason"] == "before" and "排風扇" in s["content"] for s in result["skip"]))
+        self.assertTrue(any(s["reason"] == "defer" and "路樹" in (s["loc"] + s["content"]) for s in result["skip"]))
+
+    def test_import_only_after_nov5(self):
+        """9/23 與 11/5 整批不入（含填縫改善）。11/6 起才入；再議與純 Ok 仍略過。"""
+        grid = [
+            ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦/缺失", "照片數", "填報人"],
+            ["9/23 (三)", None, "總經理", None, 3, "1F電梯前異材質石材", "Ok,填縫改善", 0, "建麟"],
+            ["9/23 (三)", None, "總經理", None, 6, "R3", "電梯機房要裝排風扇", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 9, None, "【1F路樹】使照後要換，再議", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 12, None, "【S1店舖安北路出入口】做石階（3踏）", 0, "建麟"],
+            ["11/6 (五)", None, "總經理", None, 1, "RF", "新發現的漏水要補", 0, "建麟"],
+            ["11/6 (五)", None, "總經理", None, 2, "B1", "這案再議", 0, "建麟"],
+            ["11/6 (五)", None, "總經理", None, 3, "1F", "Ok,填縫改善", 0, "建麟"],
+            ["11/6 (五)", None, "總經理", None, 4, "2F", "Ok", 0, "建麟"],
+        ]
+        result = st.plan_additions(st.parse_survey_grid(grid, TODAY), [], TODAY)
+        added = [(r[2], r[1]) for r in result["add"]]
+        self.assertEqual(added, [
+            ("RF", "新發現的漏水要補"),
+            ("1F", "Ok,填縫改善"),
+        ])
+        reasons = {s["tag"]: s["reason"] for s in result["skip"]}
+        self.assertEqual(reasons["會勘 0115/9/23#3"], "before")
+        self.assertEqual(reasons["會勘 0115/9/23#6"], "before")
+        self.assertEqual(reasons["會勘 0115/11/5#9"], "defer")
+        self.assertEqual(reasons["會勘 0115/11/5#12"], "before")
+        self.assertEqual(reasons["會勘 0115/11/6#2"], "defer")
+        self.assertEqual(reasons["會勘 0115/11/6#4"], "signoff")
+
+    def test_phrase_already_in_ledger_note_is_not_readded(self):
+        grid = [
+            ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦/缺失", "照片數", "填報人"],
+            ["11/6 (五)", None, "總經理", None, 10, None, "【RF滴水條】已切割磁磚、丈量尺寸", 1, "建麟"],
+        ]
+        existing = ["0115/9/9", "RF滴水條破口已加封板仍有縫隙", "RF", "新美", "", "", "施作中",
+                    "11/5已切割磁磚、丈量尺寸"]
+        result = st.plan_additions(st.parse_survey_grid(grid, TODAY), [existing], TODAY)
+        self.assertEqual(result["add"], [])
+        self.assertEqual(result["skip"][0]["reason"], "manual")
+
     def test_report_text_lists_adds(self):
         _, _, _, result = _plan()
         text = st.format_report(result, dry=True, source_note="來源：樣本")
         self.assertIn("乾跑，未寫入", text)
         self.assertIn("YKK通風門", text)
         self.assertIn("待分派", text)
-        self.assertIn("會勘 0115/9/23#1", text)
-        self.assertNotIn("+ 0115/9/23  3F  Ok", text)
+        self.assertIn("會勘 0115/11/6#1", text)
+        self.assertNotIn("+ 0115/11/6  3F  Ok", text)
 
 
 class CliDryRunTest(unittest.TestCase):

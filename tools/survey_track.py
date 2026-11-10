@@ -2,8 +2,9 @@
 """會勘點 → 缺失改善：純邏輯（不連網、不寫 Sheet）。
 
 會勘分頁一列一個巡視點（日期/時間/巡視/陪同/序/位置/交辦/缺失/照片數/填報人）。
-簽核用語（Ok、已確認、再議…）不建列。已有來源標記，或日期＋位置＋內容對得上
-既有缺失改善列的，不重複新增、也不改那一列。
+簽核（整段只有 Ok、已確認）不建列；內文有「再議」也不建列。
+Ok 但還有要做的事（例如填縫改善）要入。11/5 與更早的會勘整批不入，
+下一場才開始。已有來源標記，或對得上既有列的，不重複新增、也不改那一列。
 """
 import re
 from datetime import date, datetime, timedelta
@@ -12,8 +13,12 @@ SURVEY_SHEET = "會勘"
 DEFECT_SHEET = "缺失改善"
 DEFECT_HEADERS = ["發現日", "缺失內容", "位置", "責任廠商", "改善方式", "預計完成", "狀態", "備註"]
 OPEN_STATUS = "待分派"
+# 玲嬅 2026-11-10：9/23、11/5 已發生的會勘都不入帳（含填縫改善）。
+# 日期晚於這一天的下一場會勘才自動入。不綁試算表 ID。
+IMPORT_AFTER = date(2026, 11, 5)
 
-# 整格（或括號裡每一段）都是這類詞才算簽核，句子裡順帶出現「再議」仍要追蹤。
+# 整段都是這類詞才算簽核。只有「Ok」要略過；「Ok,填縫改善」還有要做的事，不算。
+# 「再議」另見 is_deferred，出現在句子裡也不入帳。
 _SIGNOFF = re.compile(
     r"^(?:ok|okay|ｏｋ|已確認|再議|無|無缺失|無異狀|沒問題|無問題|確認ok|可接受|"
     r"結案|暫不處理|維持原案|照舊|無須處理|不用處理|無須改善|沒有問題)$",
@@ -68,7 +73,10 @@ def _flat(s):
 
 
 def is_signoff(text):
-    """整段沒有可追蹤的內容，或每一段都只是簽核詞。"""
+    """整段沒有可追蹤的內容，或每一段都只是簽核詞。
+
+    「Ok」單獨出現要略過；「Ok,填縫改善」還有要做的事，不算簽核。
+    """
     raw = norm(text)
     if not raw:
         return True
@@ -76,6 +84,11 @@ def is_signoff(text):
     if not parts:
         return True
     return all(_SIGNOFF.match(p) for p in parts)
+
+
+def is_deferred(text):
+    """內文出現「再議」就不入帳（含「使照後要換，再議」）。"""
+    return "再議" in norm(text)
 
 
 def is_closed(status):
@@ -158,11 +171,38 @@ def _tokens(text):
     return out
 
 
+def _token_overlap(a_text, b_text):
+    """相同詞，或較短的一詞（至少 4 字）被另一詞包住（客廁台面盆 ⊂ 客廁台面盆矽利康…）。"""
+    a, b = set(_tokens(a_text)), set(_tokens(b_text))
+    shared = set(a & b)
+    for x in a - shared:
+        if len(x) < 4:
+            continue
+        if any(x in y or y in x for y in b if len(y) >= 4):
+            shared.add(x)
+    return shared
+
+
 def _contains(a, b):
     fa, fb = _flat(a), _flat(b)
     if len(fa) < 4 or len(fb) < 4:
         return False
     return fa in fb or fb in fa
+
+
+def _phrase_hit(needle, hay):
+    """會勘內文有連續 6 字（含數字）已出現在既有列的任一欄，視為同一件事。"""
+    fa = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", _flat(needle))
+    fb = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", _flat(hay))
+    if len(fa) < 6 or len(fb) < 6:
+        return False
+    for i in range(0, len(fa) - 5):
+        window = fa[i:i + 6]
+        if sum(1 for ch in window if "\u4e00" <= ch <= "\u9fff") < 2:
+            continue
+        if window in fb:
+            return True
+    return False
 
 
 def _loc_compatible(a, b):
@@ -182,10 +222,11 @@ def same_finding(point, defect, today):
     loc_d = _cell(defect, 2)
     date_d = parse_loose_date(_cell(defect, 0), today)
     date_ok = bool(point["date"] and date_d and point["date"] == date_d)
-    loc_ok = _loc_compatible(point["loc"], loc_d)
-    shared = set(_tokens(point["content"])) & set(_tokens(content_d))
+    loc_ok = _loc_compatible(point["loc"], loc_d) or _loc_compatible(point["loc"], content_d)
+    shared = _token_overlap(point["content"] + " " + point["loc"], content_d + " " + loc_d)
     contain = _contains(point["content"], content_d)
-    toks_s, toks_d = set(_tokens(point["content"])), set(_tokens(content_d))
+    toks_s = set(_tokens(point["content"])) | set(_tokens(point["loc"]))
+    toks_d = set(_tokens(content_d)) | set(_tokens(loc_d))
     jac = (len(shared) / len(toks_s | toks_d)) if (toks_s and toks_d) else 0.0
     strong = contain or jac >= 0.55 or len(shared) >= 2
     if strong and date_ok:
@@ -194,13 +235,21 @@ def same_finding(point, defect, today):
         return True
     if date_ok and loc_ok and shared and max(len(t) for t in shared) >= 3:
         return True
+    blob = " ".join(norm(c) for c in defect)
+    if _phrase_hit(point["content"], blob):
+        return True
     return False
 
 
 def _header_map(header):
     mapping = {}
     for i, cell in enumerate(header):
-        key = _HEADER.get(norm(cell).replace(" ", ""))
+        name = norm(cell).replace(" ", "").replace("／", "/")
+        # 工地回報的會勘分頁是單一欄「交辦/缺失」，不是交辦、缺失各一欄。
+        if "交辦" in name and "缺失" in name:
+            mapping.setdefault("body", i)
+            continue
+        key = _HEADER.get(name)
         if key and key not in mapping:
             mapping[key] = i
     return mapping
@@ -262,8 +311,16 @@ def parse_survey_grid(grid, today):
     points = []
     per_day = {}
     for raw in rows[start:]:
-        content = _combine(col(raw, "assign"), col(raw, "defect"))
+        if mapping.get("body") is not None:
+            content = norm(col(raw, "body"))
+        else:
+            content = _combine(col(raw, "assign"), col(raw, "defect"))
+        content = re.sub(r"\s+", " ", content).strip()
         loc = norm(col(raw, "loc"))
+        if not loc:
+            topic = re.match(r"^【([^】]{1,40})】", content)
+            if topic:
+                loc = topic.group(1).strip()
         if not norm(content) and not loc:
             continue
         d = parse_loose_date(col(raw, "date"), today)
@@ -333,6 +390,12 @@ def plan_additions(points, defects, today):
         if is_signoff(p["content"]):
             skip.append({"reason": "signoff", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
+        if is_deferred(p["content"]):
+            skip.append({"reason": "defer", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
+            continue
+        if p["date"] <= IMPORT_AFTER:
+            skip.append({"reason": "before", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
+            continue
         if key in planned:
             skip.append({"reason": "tagged", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
@@ -366,7 +429,13 @@ def format_report(result, dry, source_note=""):
     by = {}
     for s in skip:
         by.setdefault(s["reason"], []).append(s)
-    labels = {"signoff": "略過簽核/無內容", "tagged": "略過已有來源標記", "manual": "略過已在缺失改善（不覆寫）"}
+    labels = {
+        "signoff": "略過簽核/無內容",
+        "defer": "略過再議",
+        "before": f"略過{roc_date(IMPORT_AFTER)}（含）以前",
+        "tagged": "略過已有來源標記",
+        "manual": "略過已在缺失改善（不覆寫）",
+    }
     for key, label in labels.items():
         items = by.get(key) or []
         if not items:
