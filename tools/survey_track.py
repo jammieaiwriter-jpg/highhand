@@ -2,8 +2,9 @@
 """會勘點 → 缺失改善：純邏輯（不連網、不寫 Sheet）。
 
 會勘分頁一列一個巡視點（日期/時間/巡視/陪同/序/位置/交辦/缺失/照片數/填報人）。
-簽核用語（Ok、已確認、再議…）不建列。已有來源標記，或日期＋位置＋內容對得上
-既有缺失改善列的，不重複新增、也不改那一列。
+簽核（整段只有 Ok、已確認）不建列；內文有「再議」也不建列。
+Ok 但還有要做的事（例如填縫改善）要入。11/5 與更早的會勘整批不入，
+下一場才開始。已有來源標記，或對得上既有列的，不重複新增、也不改那一列。
 """
 import re
 from datetime import date, datetime, timedelta
@@ -12,17 +13,12 @@ SURVEY_SHEET = "會勘"
 DEFECT_SHEET = "缺失改善"
 DEFECT_HEADERS = ["發現日", "缺失內容", "位置", "責任廠商", "改善方式", "預計完成", "狀態", "備註"]
 OPEN_STATUS = "待分派"
-# 玲嬅 2026-11-10：11/5（含）起的會勘照常入帳。更早的只入 INCLUDE_TAGS。
-# 標記是「會勘 日期#序」，不綁試算表 ID。
-IMPORT_FROM = date(2026, 11, 5)
-INCLUDE_TAGS = frozenset({
-    "會勘 0115/9/23#3",  # 1F電梯前異材質石材／Ok,填縫改善
-})
-EXCLUDE_TAGS = frozenset({
-    "會勘 0115/11/5#9",  # 1F路樹／使照後要換，再議
-})
+# 玲嬅 2026-11-10：9/23、11/5 已發生的會勘都不入帳（含填縫改善）。
+# 日期晚於這一天的下一場會勘才自動入。不綁試算表 ID。
+IMPORT_AFTER = date(2026, 11, 5)
 
-# 整格（或括號裡每一段）都是這類詞才算簽核，句子裡順帶出現「再議」仍要追蹤。
+# 整段都是這類詞才算簽核。只有「Ok」要略過；「Ok,填縫改善」還有要做的事，不算。
+# 「再議」另見 is_deferred，出現在句子裡也不入帳。
 _SIGNOFF = re.compile(
     r"^(?:ok|okay|ｏｋ|已確認|再議|無|無缺失|無異狀|沒問題|無問題|確認ok|可接受|"
     r"結案|暫不處理|維持原案|照舊|無須處理|不用處理|無須改善|沒有問題)$",
@@ -397,10 +393,7 @@ def plan_additions(points, defects, today):
         if is_deferred(p["content"]):
             skip.append({"reason": "defer", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
-        if p["tag"] in EXCLUDE_TAGS:
-            skip.append({"reason": "exclude", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
-            continue
-        if p["date"] < IMPORT_FROM and p["tag"] not in INCLUDE_TAGS:
+        if p["date"] <= IMPORT_AFTER:
             skip.append({"reason": "before", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
         if key in planned:
@@ -439,8 +432,7 @@ def format_report(result, dry, source_note=""):
     labels = {
         "signoff": "略過簽核/無內容",
         "defer": "略過再議",
-        "exclude": "略過指定不入帳",
-        "before": f"略過{roc_date(IMPORT_FROM)}以前（未在例外清單）",
+        "before": f"略過{roc_date(IMPORT_AFTER)}（含）以前",
         "tagged": "略過已有來源標記",
         "manual": "略過已在缺失改善（不覆寫）",
     }
