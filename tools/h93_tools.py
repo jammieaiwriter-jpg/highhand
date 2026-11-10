@@ -35,6 +35,12 @@
   python h93_tools.py audit [--apply] [--tg] [--always]
         體檢（不用 LLM）：過期空白預排列→轉待確認題（--apply 才寫）、同日多列、待確認老化、近7日入帳、
         本機班次失敗、後端版本。--tg：有新開題／有異常／週一才推 Telegram；--always 一定推。
+  python h93_tools.py survey [--dry-run] [--from 盤點.xlsx] [--survey 會勘.xlsx] [--report-id ID]
+        讀會勘分頁，把尚未追蹤、且不是簽核（Ok／已確認／再議）的點追加到缺失改善。
+        狀態=待分派，責任廠商與預計完成留白，備註寫「會勘 日期#序」。重跑不重複、不改既有列。
+        會勘來源順序：--survey 檔、盤點簿裡的會勘分頁、環境變數 H93_REPORT_SSID（93H工地回報）、
+        最後才用 exec?today=1 的今天／昨天（沒有全表，歷史點補不到）。
+        --dry-run 只印將新增的列。寫入模式檔為 dry 時同樣不寫，除非 --force-live。
   python h93_tools.py help
         印變更單格式。
 """
@@ -882,10 +888,178 @@ def cmd_audit(args):
     out(rep)
 
 
+# ------------------------------------------------------------------ 指令：survey（會勘點入缺失改善）
+def _survey_grid_from_wb(wb):
+    import survey_track as st
+    g = grid(wb, st.SURVEY_SHEET)
+    if g is None and len(wb.sheetnames) == 1:
+        g = grid(wb, wb.sheetnames[0])
+    return g
+
+
+def _sv_item_to_row(item, fallback_date):
+    if isinstance(item, dict):
+        def g(*keys):
+            for k in keys:
+                v = item.get(k)
+                if v not in (None, ""):
+                    return v
+            return ""
+        return [g("date", "日期") or fallback_date, g("time", "時間"), g("inspector", "巡視"),
+                g("note", "陪同", "accompany"), g("no", "seq", "序"), g("loc", "位置"),
+                g("topic", "assign", "交辦"), g("desc", "defect", "缺失"),
+                g("count", "照片數"), g("reporter", "填報人", "who")]
+    if isinstance(item, list) and len(item) >= 8:
+        row = list(item) + [""] * max(0, 10 - len(item))
+        if not norm(row[0]):
+            row[0] = fallback_date
+        return row[:10]
+    return None
+
+
+def _survey_from_exec():
+    """今天／昨天的會勘。沒有全表時的備援，歷史點不在這裡。讀不到回 None。"""
+    import survey_track as st
+    try:
+        payload = json.loads(http_get(EXEC + "?today=1", timeout=40).decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(payload, dict) or "sv" not in payload:
+        return None
+    blocks = [payload]
+    yday = payload.get("yday")
+    if isinstance(yday, dict):
+        blocks.append(yday)
+    body = []
+    for block in blocks:
+        sv = block.get("sv")
+        if not isinstance(sv, list):
+            continue
+        fallback = block.get("date") or ""
+        for item in sv:
+            row = _sv_item_to_row(item, fallback)
+            if row:
+                body.append(row)
+    header = ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦", "缺失", "照片數", "填報人"]
+    return [header] + body
+
+
+def _load_survey_grid(args, ledger_wb):
+    """回傳 (grid|None, 給人看的來源說明)。grid 為 None 表示完全讀不到。"""
+    import survey_track as st
+    path = argval(args, "--survey")
+    if path:
+        g = _survey_grid_from_wb(open_wb(path))
+        if not g:
+            return None, f"檔案沒有「{st.SURVEY_SHEET}」分頁：{path}"
+        return g, f"來源：{path}"
+    g = grid(ledger_wb, st.SURVEY_SHEET)
+    if g:
+        return g, "來源：進度盤點的會勘分頁"
+    ssid = (argval(args, "--report-id") or os.environ.get("H93_REPORT_SSID") or "").strip()
+    if ssid:
+        try:
+            data = http_get(f"https://docs.google.com/spreadsheets/d/{ssid}/export?format=xlsx", timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return None, f"工地回報表讀取失敗：{e}"
+        if data[:2] != b"PK":
+            return None, "工地回報表下載到的不是 xlsx（這份表可能沒有公開讀取）"
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        path = os.path.join(BACKUP_DIR, "工地回報.xlsx")
+        with open(path, "wb") as f:
+            f.write(data)
+        wb = open_wb(path)
+        g = grid(wb, st.SURVEY_SHEET)
+        if not g:
+            return None, f"工地回報表沒有「{st.SURVEY_SHEET}」分頁。有：{wb.sheetnames}"
+        return g, "來源：93H工地回報／會勘"
+    note = ("進度盤點沒有「會勘」分頁，也未設定 H93_REPORT_SSID（93H工地回報那份試算表的 ID）。"
+            "歷史會勘點這次補不進去；下面只看 exec 回傳的今天與昨天。")
+    partial = _survey_from_exec()
+    if partial is None:
+        return None, note + " exec 也沒回應。"
+    return partial, note
+
+
+def _push_survey_rows(defect_grid, changelog_grid, added_rows):
+    """整頁寫回缺失改善（只追加）與異動紀錄。回傳 (ok, message)。"""
+    import survey_track as st
+    vers = fetch_vers()
+    for name, values in ((st.DEFECT_SHEET, defect_grid), (CHANGELOG, changelog_grid)):
+        st_code, txt = import_sheet(name, values, expect_ver=(vers or {}).get(name) if vers is not None else None)
+        err = post_err(txt)
+        if err or st_code not in (200, 302):
+            return False, f"「{name}」寫入失敗：{err or txt[:160]}"
+        time.sleep(1)
+    return True, f"已追加 {len(added_rows)} 列"
+
+
+def cmd_survey(args):
+    import survey_track as st
+    today = date.today()
+    dry = "--dry-run" in args or (write_mode() == "dry" and "--force-live" not in args)
+    from_path = argval(args, "--from")
+    ledger_wb = open_wb(from_path) if from_path else open_wb(download())
+    survey_grid, note = _load_survey_grid(args, ledger_wb)
+    if survey_grid is None:
+        print(note or "讀不到會勘，未寫入。")
+        return
+    # 正式寫入前重抓盤點，避免拿舊快照整頁蓋回去。會勘若在同一本，也改讀新的。
+    if not dry:
+        ledger_wb = open_wb(download())
+        if not argval(args, "--survey") and not (argval(args, "--report-id") or os.environ.get("H93_REPORT_SSID")):
+            fresh = grid(ledger_wb, st.SURVEY_SHEET)
+            if fresh:
+                survey_grid = fresh
+                note = "來源：進度盤點的會勘分頁"
+    defect_grid = grid(ledger_wb, st.DEFECT_SHEET)
+    if not defect_grid:
+        print("找不到「缺失改善」分頁，未寫入。")
+        return
+    headers = [norm(c) for c in list(defect_grid[0][:8])]
+    if headers != st.DEFECT_HEADERS:
+        print(f"「缺失改善」表頭與預期不同（{headers}），未寫入。")
+        return
+    points = st.parse_survey_grid(survey_grid, today)
+    result = st.plan_additions(points, defect_grid[1:], today)
+    print(st.format_report(result, dry, note))
+    if dry or not result["add"]:
+        return
+    width = max(len(r) for r in defect_grid)
+    for row in result["add"]:
+        padded = list(row) + [""] * (width - len(row))
+        defect_grid.append(padded[:width])
+    cl = grid(ledger_wb, CHANGELOG) or [list(CHANGELOG_HDR)]
+    tags = [r[7].split("；", 1)[0] for r in result["add"]]
+    cl.append([roc_today(), "會勘轉缺失改善",
+               f"新增{len(result['add'])}列：" + "、".join(tags[:8]),
+               f"會勘自動入帳 [survey-{today:%Y%m%d}]"])
+    ok, msg = _push_survey_rows(defect_grid, cl, result["add"])
+    print(msg)
+    if not ok:
+        sys.exit(1)
+    # 整頁覆寫後再抓一次，確認來源標記真的在表上（沒有就不算成功，下一班次會再試）
+    tags = [r[7].split("；", 1)[0] for r in result["add"]]
+    vpath = download(os.path.join(BACKUP_DIR, f"驗證_survey_{today:%Y%m%d}.xlsx"))
+    try:
+        got = ngrid(grid(open_wb(vpath), st.DEFECT_SHEET))
+    finally:
+        try:
+            os.remove(vpath)
+        except OSError:
+            pass
+    blob = "\n".join(" | ".join(row) for row in got)
+    missing = [t for t in tags if t not in blob]
+    if missing:
+        print("寫入後對不上，未視為成功：" + "、".join(missing))
+        sys.exit(1)
+    print(f"寫後核對通過（{len(tags)} 列都在缺失改善）")
+
+
 # ------------------------------------------------------------------ main
 CMDS = {"today": cmd_today, "snapshot": cmd_snapshot, "dump": cmd_dump, "find": cmd_find, "audit": cmd_audit,
         "changelog": cmd_changelog, "apply": cmd_apply, "pending": cmd_pending, "tg": cmd_tg,
-        "rebuild": cmd_rebuild, "mode": cmd_mode}
+        "rebuild": cmd_rebuild, "mode": cmd_mode, "survey": cmd_survey}
 
 
 def main():
