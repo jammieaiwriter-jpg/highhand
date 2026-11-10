@@ -12,6 +12,15 @@ SURVEY_SHEET = "會勘"
 DEFECT_SHEET = "缺失改善"
 DEFECT_HEADERS = ["發現日", "缺失內容", "位置", "責任廠商", "改善方式", "預計完成", "狀態", "備註"]
 OPEN_STATUS = "待分派"
+# 玲嬅 2026-11-10：11/5（含）起的會勘照常入帳。更早的只入 INCLUDE_TAGS。
+# 標記是「會勘 日期#序」，不綁試算表 ID。
+IMPORT_FROM = date(2026, 11, 5)
+INCLUDE_TAGS = frozenset({
+    "會勘 0115/9/23#3",  # 1F電梯前異材質石材／Ok,填縫改善
+})
+EXCLUDE_TAGS = frozenset({
+    "會勘 0115/11/5#9",  # 1F路樹／使照後要換，再議
+})
 
 # 整格（或括號裡每一段）都是這類詞才算簽核，句子裡順帶出現「再議」仍要追蹤。
 _SIGNOFF = re.compile(
@@ -68,7 +77,10 @@ def _flat(s):
 
 
 def is_signoff(text):
-    """整段沒有可追蹤的內容，或每一段都只是簽核詞。"""
+    """整段沒有可追蹤的內容，或每一段都只是簽核詞。
+
+    「Ok」單獨出現要略過；「Ok,填縫改善」還有要做的事，不算簽核。
+    """
     raw = norm(text)
     if not raw:
         return True
@@ -76,6 +88,11 @@ def is_signoff(text):
     if not parts:
         return True
     return all(_SIGNOFF.match(p) for p in parts)
+
+
+def is_deferred(text):
+    """內文出現「再議」就不入帳（含「使照後要換，再議」）。"""
+    return "再議" in norm(text)
 
 
 def is_closed(status):
@@ -377,6 +394,15 @@ def plan_additions(points, defects, today):
         if is_signoff(p["content"]):
             skip.append({"reason": "signoff", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
+        if is_deferred(p["content"]):
+            skip.append({"reason": "defer", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
+            continue
+        if p["tag"] in EXCLUDE_TAGS:
+            skip.append({"reason": "exclude", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
+            continue
+        if p["date"] < IMPORT_FROM and p["tag"] not in INCLUDE_TAGS:
+            skip.append({"reason": "before", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
+            continue
         if key in planned:
             skip.append({"reason": "tagged", "tag": p["tag"], "content": p["content"], "loc": p["loc"]})
             continue
@@ -410,7 +436,14 @@ def format_report(result, dry, source_note=""):
     by = {}
     for s in skip:
         by.setdefault(s["reason"], []).append(s)
-    labels = {"signoff": "略過簽核/無內容", "tagged": "略過已有來源標記", "manual": "略過已在缺失改善（不覆寫）"}
+    labels = {
+        "signoff": "略過簽核/無內容",
+        "defer": "略過再議",
+        "exclude": "略過指定不入帳",
+        "before": f"略過{roc_date(IMPORT_FROM)}以前（未在例外清單）",
+        "tagged": "略過已有來源標記",
+        "manual": "略過已在缺失改善（不覆寫）",
+    }
     for key, label in labels.items():
         items = by.get(key) or []
         if not items:
