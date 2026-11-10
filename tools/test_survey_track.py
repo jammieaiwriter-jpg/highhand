@@ -148,6 +148,42 @@ class SurveyTrackTest(unittest.TestCase):
         points = st.parse_survey_grid(grid, TODAY)
         self.assertEqual(len(points), 1)
 
+    def test_combined_column_and_weekday_date(self):
+        """工地回報的會勘分頁是單一欄「交辦/缺失」，日期帶星期。"""
+        grid = [
+            ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦/缺失", "照片數", "填報人"],
+            ["9/23 (三)", None, "總經理", None, 1, "R3", "電梯機房要裝排風扇", 0, "建麟"],
+            ["9/23 (三)", None, "總經理", None, 2, "3F", "Ok", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 3, None,
+             "【3FA3 客廁台面盆】合檠目前矽利康打在臉盆旁，請水電改打在臉盆底", 0, "建麟"],
+            ["11/5 (四)", None, "總經理", None, 4, None, "【1F路樹】使照後要換，再議", 0, "建麟"],
+        ]
+        points = st.parse_survey_grid(grid, TODAY)
+        by_seq = {p["seq"]: p for p in points}
+        self.assertEqual(by_seq[1]["content"], "電梯機房要裝排風扇")
+        self.assertEqual(by_seq[1]["date"], date(2026, 9, 23))
+        self.assertTrue(st.is_signoff(by_seq[2]["content"]))
+        self.assertEqual(by_seq[3]["loc"], "3FA3 客廁台面盆")
+        self.assertIn("矽利康", by_seq[3]["content"])
+        self.assertFalse(st.is_signoff(by_seq[4]["content"]))
+        result = st.plan_additions(points, [list(MANUAL)], TODAY)
+        added = [r[1] for r in result["add"]]
+        self.assertIn("電梯機房要裝排風扇", added)
+        self.assertNotIn("合檠目前矽利康打在臉盆旁，請水電改打在臉盆底",
+                         " ".join(added).replace("【3FA3 客廁台面盆】", ""))
+        self.assertTrue(any(s["reason"] == "manual" and "矽利康" in s["content"] for s in result["skip"]))
+
+    def test_phrase_already_in_ledger_note_is_not_readded(self):
+        grid = [
+            ["日期", "時間", "巡視", "陪同", "序", "位置", "交辦/缺失", "照片數", "填報人"],
+            ["11/5 (四)", None, "總經理", None, 10, None, "【RF滴水條】已切割磁磚、丈量尺寸", 1, "建麟"],
+        ]
+        existing = ["0115/9/9", "RF滴水條破口已加封板仍有縫隙", "RF", "新美", "", "", "施作中",
+                    "11/5已切割磁磚、丈量尺寸"]
+        result = st.plan_additions(st.parse_survey_grid(grid, TODAY), [existing], TODAY)
+        self.assertEqual(result["add"], [])
+        self.assertEqual(result["skip"][0]["reason"], "manual")
+
     def test_report_text_lists_adds(self):
         _, _, _, result = _plan()
         text = st.format_report(result, dry=True, source_note="來源：樣本")

@@ -158,11 +158,38 @@ def _tokens(text):
     return out
 
 
+def _token_overlap(a_text, b_text):
+    """相同詞，或較短的一詞（至少 4 字）被另一詞包住（客廁台面盆 ⊂ 客廁台面盆矽利康…）。"""
+    a, b = set(_tokens(a_text)), set(_tokens(b_text))
+    shared = set(a & b)
+    for x in a - shared:
+        if len(x) < 4:
+            continue
+        if any(x in y or y in x for y in b if len(y) >= 4):
+            shared.add(x)
+    return shared
+
+
 def _contains(a, b):
     fa, fb = _flat(a), _flat(b)
     if len(fa) < 4 or len(fb) < 4:
         return False
     return fa in fb or fb in fa
+
+
+def _phrase_hit(needle, hay):
+    """會勘內文有連續 6 字（含數字）已出現在既有列的任一欄，視為同一件事。"""
+    fa = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", _flat(needle))
+    fb = re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", _flat(hay))
+    if len(fa) < 6 or len(fb) < 6:
+        return False
+    for i in range(0, len(fa) - 5):
+        window = fa[i:i + 6]
+        if sum(1 for ch in window if "\u4e00" <= ch <= "\u9fff") < 2:
+            continue
+        if window in fb:
+            return True
+    return False
 
 
 def _loc_compatible(a, b):
@@ -182,10 +209,11 @@ def same_finding(point, defect, today):
     loc_d = _cell(defect, 2)
     date_d = parse_loose_date(_cell(defect, 0), today)
     date_ok = bool(point["date"] and date_d and point["date"] == date_d)
-    loc_ok = _loc_compatible(point["loc"], loc_d)
-    shared = set(_tokens(point["content"])) & set(_tokens(content_d))
+    loc_ok = _loc_compatible(point["loc"], loc_d) or _loc_compatible(point["loc"], content_d)
+    shared = _token_overlap(point["content"] + " " + point["loc"], content_d + " " + loc_d)
     contain = _contains(point["content"], content_d)
-    toks_s, toks_d = set(_tokens(point["content"])), set(_tokens(content_d))
+    toks_s = set(_tokens(point["content"])) | set(_tokens(point["loc"]))
+    toks_d = set(_tokens(content_d)) | set(_tokens(loc_d))
     jac = (len(shared) / len(toks_s | toks_d)) if (toks_s and toks_d) else 0.0
     strong = contain or jac >= 0.55 or len(shared) >= 2
     if strong and date_ok:
@@ -194,13 +222,21 @@ def same_finding(point, defect, today):
         return True
     if date_ok and loc_ok and shared and max(len(t) for t in shared) >= 3:
         return True
+    blob = " ".join(norm(c) for c in defect)
+    if _phrase_hit(point["content"], blob):
+        return True
     return False
 
 
 def _header_map(header):
     mapping = {}
     for i, cell in enumerate(header):
-        key = _HEADER.get(norm(cell).replace(" ", ""))
+        name = norm(cell).replace(" ", "").replace("／", "/")
+        # 工地回報的會勘分頁是單一欄「交辦/缺失」，不是交辦、缺失各一欄。
+        if "交辦" in name and "缺失" in name:
+            mapping.setdefault("body", i)
+            continue
+        key = _HEADER.get(name)
         if key and key not in mapping:
             mapping[key] = i
     return mapping
@@ -262,8 +298,16 @@ def parse_survey_grid(grid, today):
     points = []
     per_day = {}
     for raw in rows[start:]:
-        content = _combine(col(raw, "assign"), col(raw, "defect"))
+        if mapping.get("body") is not None:
+            content = norm(col(raw, "body"))
+        else:
+            content = _combine(col(raw, "assign"), col(raw, "defect"))
+        content = re.sub(r"\s+", " ", content).strip()
         loc = norm(col(raw, "loc"))
+        if not loc:
+            topic = re.match(r"^【([^】]{1,40})】", content)
+            if topic:
+                loc = topic.group(1).strip()
         if not norm(content) and not loc:
             continue
         d = parse_loose_date(col(raw, "date"), today)
