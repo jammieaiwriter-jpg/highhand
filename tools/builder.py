@@ -13,7 +13,6 @@
   6. 廠商協調：已定案／結案／已到貨的不顯示。
   7. 待長官裁決：加「待長官現場確認／拍板」自各分頁自動抓取。
   8. 缺失改善：已完成（含「已完成(剩保護工程)」）不顯示。
-     備註含「會勘 日期#序」且尚未結案的，另外列在「未結會勘」（逾期或缺廠商／期限會標色）。
   9. 粗工打石：新增與會議紀錄「沛誼工作報告」週統計對帳（雲端分頁「粗工對帳」）。
 """
 import glob
@@ -27,12 +26,8 @@ from datetime import date, timedelta
 from openpyxl import load_workbook
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-OUT_HTML = os.environ.get("H93_OUT") or os.path.join(BASE, "93H儀表板.html")
+OUT_HTML = os.path.join(BASE, "93H儀表板.html")
 TODAY = date.today()
-try:
-    import survey_track
-except ImportError:
-    survey_track = None
 
 # 儀表板直接改狀態（2026-09-09）：每列 ✏️ → 瀏覽器 POST update_cell 到回報 Apps Script → 寫回雲端 Sheet 單格
 # ＋自動記異動紀錄；頁面下次重產（整點桌機排程／雲端班次）才反映，改完的列先標灰「已送出」。
@@ -45,8 +40,7 @@ EDIT_FIELDS = {
     "廠商協調": [(5, "狀態", ["已定案", "結案✓", "待約", "確認中", "待報價"]), (6, "備註", [])],
     "進料追蹤": [(5, "實際到料", ["已到料", "部分到料", "未到"]), (1, "日期", []), (6, "備註", [])],
     "待裁決": [(4, "長官裁決", []), (5, "裁決日", []), (6, "備註", [])],
-    "缺失改善": [(7, "狀態", ["待分派", "已完成", "進行中", "已排程", "待處理", "觀察中", "結案"]),
-               (4, "責任廠商", []), (6, "預計完成", []), (8, "備註", [])],
+    "缺失改善": [(7, "狀態", ["已完成", "進行中", "已排程", "待處理", "觀察中", "結案"]), (6, "預計完成", []), (8, "備註", [])],
     "發包與工作事項": [(3, "現況", ["完成", "結案"]), (4, "下一步", [])],
     "燈具進度": [(5, "日期狀態", ["已完成", "已進場", "施作中"]), (6, "備註", [])],
     "石材追蹤": [(3, "狀態", ["已完成", "已進場", "施作中"]), (4, "備註", []), (6, "進度", [])],
@@ -200,28 +194,20 @@ def attended(v) -> bool:
 # ---------------- 讀資料源 ----------------
 # 正本＝Google Sheet「93H進度盤點雲端」（2026-09-03 雲端化）。每次執行先抓雲端匯出；
 # 抓不到（斷網）才退回本機最新 xlsx。本機 93H進度盤點_1150826.xlsx 已封存不再維護。
-# H93_SRC：預覽／測試改讀本機 xlsx，不抓雲端（正式班次不要設）。
 CLOUD_XLSX = ("https://docs.google.com/spreadsheets/d/"
               "1JBdrqfzQ_AF0fG8x_RT7wjZSTCjCfgdgnX9FRkQJSd0/export?format=xlsx")
 CLOUD_CACHE = os.path.join(BASE, "_雲端盤點快取.xlsx")
 SRC = None
-_src_override = os.environ.get("H93_SRC", "").strip()
-if _src_override:
-    if not os.path.exists(_src_override):
-        raise SystemExit(f"H93_SRC 找不到 {_src_override}")
-    SRC = _src_override
-    print(f"資料源：H93_SRC {SRC}")
-else:
-    try:
-        req = urllib.request.Request(CLOUD_XLSX, headers={"User-Agent": "93H-dashboard"})
-        data = urllib.request.urlopen(req, timeout=30).read()
-        if len(data) > 10000:
-            with open(CLOUD_CACHE, "wb") as _f:
-                _f.write(data)
-            SRC = CLOUD_CACHE
-            print("資料源：雲端 93H進度盤點雲端（Google Sheets）")
-    except Exception as _e:
-        print(f"雲端抓取失敗（{_e}），改用本機檔")
+try:
+    req = urllib.request.Request(CLOUD_XLSX, headers={"User-Agent": "93H-dashboard"})
+    data = urllib.request.urlopen(req, timeout=30).read()
+    if len(data) > 10000:
+        with open(CLOUD_CACHE, "wb") as _f:
+            _f.write(data)
+        SRC = CLOUD_CACHE
+        print("資料源：雲端 93H進度盤點雲端（Google Sheets）")
+except Exception as _e:
+    print(f"雲端抓取失敗（{_e}），改用本機檔")
 if SRC is None:
     files = sorted(glob.glob(os.path.join(BASE, "93H進度盤點_*.xlsx")))
     if os.path.exists(CLOUD_CACHE):
@@ -474,8 +460,7 @@ admin_failed = [r for r in admin_all
 decisions = [r for r in rows_of("待裁決", 6) if not r[3]]
 
 # 規則8（玲嬅 9/9）：已完成（含「已完成(剩保護工程)」）／結案 一律不顯示
-defect_all = rows_of("缺失改善", 8)
-defects = [r for r in defect_all
+defects = [r for r in rows_of("缺失改善", 8)
            if not re.match(r"^\s*(已完成|完成|結案|已結案)", r[6]) and "結案" not in r[6]]
 
 # 規則6（玲嬅 9/9）：廠商協調只列還沒定案的
@@ -1091,67 +1076,6 @@ if dispatch_failed_disp or admin_failed:
     _sl.append(f'<a href="#sec-failed" onclick="secopen(\'sec-failed\')">🔴改期{len(dispatch_failed_disp)+len(admin_failed)}</a>')
 if decisions or site_confirm:
     _sl.append(f'<a href="#sec-dec" onclick="secopen(\'sec-dec\')">⚖️裁決{len(decisions)}+現場確認{len(site_confirm)}</a>')
-def _survey_section():
-    """未結會勘：備註帶「會勘 日期#序」、且尚未結案的缺失改善列。"""
-    if survey_track is None:
-        return "", []
-    try:
-        open_rows = [r for r in defect_all
-                     if survey_track.is_survey_origin(r[7], TODAY) and not survey_track.is_closed(r[6])]
-    except Exception as _e:
-        print(f"未結會勘略過（{_e}）")
-        return "", []
-
-    def _rank(r):
-        overdue, miss_o, miss_d = survey_track.attention(r[5], r[3], TODAY)
-        found = survey_track.parse_loose_date(r[0], TODAY) or date.max
-        return (0 if overdue else 1, 0 if (miss_o or miss_d) else 1, found)
-
-    open_rows.sort(key=_rank)
-    if not open_rows:
-        return "", []
-    body = []
-    n_bad = 0
-    for r in open_rows:
-        overdue, miss_o, miss_d = survey_track.attention(r[5], r[3], TODAY)
-        if overdue or miss_o or miss_d:
-            n_bad += 1
-        bg = "#fbe3e0" if overdue else ("#fff7e0" if (miss_o or miss_d) else "")
-        badges = []
-        if overdue:
-            due = survey_track.parse_loose_date(r[5], TODAY)
-            badges.append(f'<span class="badge b-red">逾{(TODAY - due).days}天</span>')
-        if miss_o:
-            badges.append('<span class="badge b-orange">缺廠商</span>')
-        if miss_d:
-            badges.append('<span class="badge b-orange">缺期限</span>')
-        style = f" style=background:{bg}" if bg else ""
-        badges_html = (" " + " ".join(badges)) if badges else ""
-        body.append(
-            f"<tr{style}><td>{esc(r[0])}</td><td>{esc(r[2]) or '—'}</td>"
-            f"<td>{esc(r[1])}{ebtn('缺失改善', r.rn, r[1], r[1], r)}</td>"
-            f"<td><b>{esc(r[3]) or '—'}</b></td><td>{esc(r[5]) or '—'}</td>"
-            f"<td>{esc(r[6]) or '—'}{badges_html}</td></tr>")
-    opened = " open" if n_bad else ""
-    html_block = (
-        f'<details class="sec" id="sec-survey" style="border-left:4px solid #d68910"{opened}>'
-        f'<summary>📋 未結會勘<span class="cnt">{len(open_rows)}</span></summary>'
-        '<div class="subh">會勘點已記入缺失改善、尚未結案。黃底＝還沒指定責任廠商或預計完成；'
-        '紅底＝已過預計完成。狀態改成已完成（或結案）後，這裡不再列出。</div>'
-        '<table><tr><th>發現日</th><th>位置</th><th>內容</th><th>責任廠商</th>'
-        '<th>預計完成</th><th>狀態</th></tr>'
-        + "".join(body) + "</table></details>")
-    return html_block, open_rows
-
-
-try:
-    survey_html, survey_open = _survey_section()
-except Exception as _e:
-    print(f"未結會勘略過（{_e}）")
-    survey_html, survey_open = "", []
-
-if survey_open:
-    _sl.append(f'<a href="#sec-survey" onclick="secopen(\'sec-survey\')">📋未結會勘{len(survey_open)}</a>')
 if defects:
     _sl.append(f'<a href="#sec-defect" onclick="secopen(\'sec-defect\')">🛠缺失{len(defects)}</a>')
 if weather_alerts:
@@ -1290,7 +1214,6 @@ tr.edited .eb {{ opacity:1; }}
 <div class="zone">風險與決策</div>
 {'<details class="sec" id="sec-failed" style="border-left:4px solid #c0392b"><summary>🔴 未完成／改期待重排' + failed_hint + '<span class="cnt">' + str(len(dispatch_failed_disp) + len(admin_failed)) + '</span></summary>' + failed_html + '</details>' if failed_html else ''}
 {'<details class="sec" id="sec-dec" style="border-left:4px solid #7030A0"><summary>⚖️ 待長官裁決／現場確認<span class="cnt">' + str(len(decisions) + len(site_confirm)) + '</span></summary>' + dec_html + '</details>' if dec_html else ''}
-{survey_html}
 {'<details class="sec" id="sec-defect"><summary>🛠️ 缺失改善追蹤（未完成）<span class="cnt">' + str(len(defects)) + '</span></summary><table><tr><th>發現日</th><th>缺失內容</th><th>位置</th><th>責任廠商</th><th>改善方式</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{esc(r[1])}{ebtn('缺失改善', r.rn, r[1], r[1], r)}</td><td>{esc(r[2])}</td><td><b>{esc(r[3])}</b></td><td class='note'>{esc(r[4])}</td><td>{esc(r[6])}</td><td class='note'>{esc(r[7])}</td></tr>" for r in defects) + '</table></details>' if defects else ''}
 <div class="zone">行政</div>
 {'<details class="sec"><summary>🏛️ 送審與變更（審核單位，時程可能拖）<span class="cnt">' + str(len(submissions)) + '</span></summary><table><tr><th>事項</th><th>受理/審核單位</th><th>送件日</th><th>預計核准</th><th>實際核准</th><th>備註</th></tr>' + ''.join(f"<tr><td><b>{esc(s[0])}</b>{ebtn('送審變更', s.rn, s[0], s[0], s)}</td><td>{esc(s[1])}</td><td>{esc(s[2]) or '—'}</td><td>{esc(s[3]) or '—'}</td><td>{esc(s[4]) or '—'}</td><td class='note'>{esc(s[6])}</td></tr>" for s in submissions) + '</table></details>' if submissions else ''}
