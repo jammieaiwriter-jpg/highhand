@@ -1,0 +1,58 @@
+# 93H 不用 LLM 的雲端定時工作（2026-11-12 起取代桌機排程「93H_儀表板自動上傳」「93H_每日體檢」）
+# - 每小時（台北 07:05–22:05）：重產儀表板，有變更才 push（tools/h93_tools.py rebuild）
+# - 每天 08:20 台北：體檢 audit --apply（有設 Telegram secrets 才加 --tg），接著重產
+# Telegram 金鑰放 repo Secrets：H93_TG_TOKEN、H93_TG_CHAT（repo 公開，金鑰絕不寫進檔案）
+# 注意：GitHub 排程會延遲 5–30 分鐘屬正常。
+name: h93-cloud
+
+on:
+  schedule:
+    - cron: "5 23,0-14 * * *"   # UTC → 台北 07:05–22:05 每小時
+    - cron: "20 0 * * *"        # UTC 00:20 → 台北 08:20 體檢
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "build=只重產；audit=體檢＋重產"
+        default: build
+        type: choice
+        options: [build, audit]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: h93-cloud
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Taipei
+      PYTHONIOENCODING: utf-8
+      H93_SURVEY_IMPORT: "off"      # 會勘入帳仍由雲端記帳 routine 做，這裡只重產
+      H93_TG_TOKEN: ${{ secrets.H93_TG_TOKEN }}
+      H93_TG_CHAT: ${{ secrets.H93_TG_CHAT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openpyxl --quiet
+      - name: 體檢
+        if: github.event.schedule == '20 0 * * *' || inputs.job == 'audit'
+        run: |
+          if [ -n "$H93_TG_TOKEN" ] && [ -n "$H93_TG_CHAT" ]; then
+            python tools/h93_tools.py audit --apply --tg
+          else
+            echo "::warning::沒有 Telegram secrets，體檢照跑但不推播"
+            python tools/h93_tools.py audit --apply
+          fi
+      - name: 重產儀表板並推送
+        run: |
+          out=$(python tools/h93_tools.py rebuild)
+          echo "$out"
+          echo "$out" | python -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('build_rc')==0 and (d.get('pushed') or d.get('note')=='NO CHANGE') else 1)"
