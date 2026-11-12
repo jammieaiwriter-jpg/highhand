@@ -910,6 +910,8 @@ input[type="file"] { display: none; }
     <button class="btn-rtool secondary" onclick="copyReportText()">📋 複製文字</button>
     <button class="btn-rtool secondary" onclick="printPage()">🖨 列印存PDF</button>
     <button class="btn-rtool secondary" id="btnWord" onclick="exportWord()">📝 匯出 Word</button>
+    <button class="btn-rtool primary" id="btnSend" onclick="sendToCompany()">📤 回傳公司</button>
+    <span id="sendStatus" style="font-size:.85em;color:#555;margin-left:6px"></span>
   </div>
   <div class="report-scroll">
     <div id="reportDoc"></div>
@@ -1969,6 +1971,49 @@ function buildDocxBlob(docXml, images = []) {
   ];
   const zip = createZip(files);
   return new Blob([zip], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+
+// ══ 回傳公司（2026-11-12）：寫入「93H工地回報」Sheet 的「會勘」分頁＋照片歸檔 Drive「93H會勘照片」══
+// 雲端記帳 10:55／21:55 讀「今天＋昨天」的會勘 → 每一點匯入盤點雲端「缺失改善」→ 重建 93h 網頁。
+// date 送「回傳當天」(雲端才讀得到)，真正的會勘日寫在 text 與 note。
+const REPORT_API = "https://script.google.com/macros/s/AKfycbxxBXks2VtVjBJZhkzkzTVexEpUmcyCKMKjE18-dpiEh2SnfHcwP2VG6SMPV1NfAblJjw/exec";
+const SENT_KEY = 'agenda_sent_v1';
+async function sendToCompany() {
+  const btn = document.getElementById('btnSend'), st = document.getElementById('sendStatus');
+  if (btn.disabled) return;
+  session.items.forEach(item => { const el = document.getElementById(`conc-${item.id}`); if (el) item.conclusion = el.value; });
+  if (!session.items.length) { showToast('沒有討論事項可回傳'); return; }
+  if (!/93H/i.test(session.unit || '') && !confirm('巡視單位不是 93H，仍要回傳到 93H 工地回報？')) return;
+  let sent = {}; try { sent = JSON.parse(localStorage.getItem(SENT_KEY) || '{}'); } catch (e) {}
+  const sig = (session.date || '') + '|' + session.items.length + '|' + session.items.map(i => i.topic).join('/');
+  if (sent[sig] && !confirm('這份會勘在 ' + sent[sig] + ' 已回傳過，確定要再送一次？（會重複）')) return;
+  const now = new Date(), md = (now.getMonth() + 1) + '/' + now.getDate();
+  const stLabel = it => it.isExtra ? '現場新增' : (it.done ? '已確認' : '未結案');
+  const lines = session.items.map((it, i) => `${i + 1}. ${it.topic}｜${(it.conclusion || '').replace(/\s+/g, ' ')}（${stLabel(it)}）` + (it.photos.length ? `（照片${it.photos.length}張）` : ''));
+  const text = `${md} 93H會勘紀錄（會勘日 ${session.date}）
+巡視：${session.officer}
+陪同：${session.escort || '—'}
+` + lines.join('\n');
+  const post = obj => fetch(REPORT_API, { method: 'POST', body: JSON.stringify(Object.assign({ key: '93h', ts: now.toISOString(), reporter: '會勘紀錄工具' }, obj)) }).then(r => r.text());
+  btn.disabled = true; btn.textContent = '⏳ 回傳中…'; st.textContent = '回傳中，請勿關閉頁面…';
+  try {
+    await post({ type: 'survey', date: md, text, inspector: session.officer, note: `會勘日${session.date}；陪同${session.escort || '—'}`,
+      items: session.items.map((it, i) => ({ no: i + 1, loc: it.topic, desc: `${it.conclusion || ''}（${stLabel(it)}）`, count: it.photos.length })) });
+    const jobs = []; session.items.forEach(it => it.photos.forEach(ph => jobs.push({ it, ph })));
+    const dk = (session.date || '').replace(/-/g, '') || (now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0'));
+    for (let k = 0; k < jobs.length; k++) {
+      st.textContent = `上傳照片 ${k + 1}/${jobs.length}…`;
+      const src = String(jobs[k].ph);
+      if (!src.startsWith('data:')) continue;
+      await post({ type: 'photo', kind: 'survey', date: md, dateKey: dk, loc: jobs[k].it.topic, trade: '', desc: (jobs[k].it.conclusion || '').slice(0, 40), filename: `會勘_${k + 1}.jpg`, b64: src.split(',')[1] });
+    }
+    sent[sig] = now.toLocaleString(); try { localStorage.setItem(SENT_KEY, JSON.stringify(sent)); } catch (e) {}
+    btn.textContent = '✅ 已回傳'; st.textContent = `✅ 已回傳公司（${session.items.length} 點` + (jobs.length ? `、照片 ${jobs.length} 張` : '') + `）。雲端 10:55／21:55 會匯入缺失改善並更新 93h 網頁`;
+    showToast('✅ 已回傳公司');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '📤 回傳公司'; st.textContent = '⚠️ 回傳失敗，請稍後再試：' + e.message;
+  }
 }
 
 async function exportWord() {
