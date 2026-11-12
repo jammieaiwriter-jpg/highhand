@@ -459,6 +459,14 @@ admin_failed = [r for r in admin_all
 
 decisions = [r for r in rows_of("待裁決", 6) if not r[3]]
 
+# 2026-11-12 玲嬅定：會勘紀錄一律匯入「缺失改善」，備註以「【會勘M/D…】」開頭；顯示時加 🔍會勘 標籤（舊列含「會勘」也算）
+SV_TAG = '<span style="display:inline-block;background:#e8f1fb;color:#1b4f72;border-radius:8px;padding:0 6px;margin-right:4px;font-size:.8em">🔍會勘</span>'
+
+
+def is_sv(r):
+    return "【會勘" in str(r[7]) or "會勘" in str(r[7])[:40]
+
+
 # 規則8（玲嬅 9/9）：已完成（含「已完成(剩保護工程)」）／結案 一律不顯示
 defects = [r for r in rows_of("缺失改善", 8)
            if not re.match(r"^\s*(已完成|完成|結案|已結案)", r[6]) and "結案" not in r[6]]
@@ -1214,7 +1222,7 @@ tr.edited .eb {{ opacity:1; }}
 <div class="zone">風險與決策</div>
 {'<details class="sec" id="sec-failed" style="border-left:4px solid #c0392b"><summary>🔴 未完成／改期待重排' + failed_hint + '<span class="cnt">' + str(len(dispatch_failed_disp) + len(admin_failed)) + '</span></summary>' + failed_html + '</details>' if failed_html else ''}
 {'<details class="sec" id="sec-dec" style="border-left:4px solid #7030A0"><summary>⚖️ 待長官裁決／現場確認<span class="cnt">' + str(len(decisions) + len(site_confirm)) + '</span></summary>' + dec_html + '</details>' if dec_html else ''}
-{'<details class="sec" id="sec-defect"><summary>🛠️ 缺失改善追蹤（未完成）<span class="cnt">' + str(len(defects)) + '</span></summary><table><tr><th>發現日</th><th>缺失內容</th><th>位置</th><th>責任廠商</th><th>改善方式</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{esc(r[1])}{ebtn('缺失改善', r.rn, r[1], r[1], r)}</td><td>{esc(r[2])}</td><td><b>{esc(r[3])}</b></td><td class='note'>{esc(r[4])}</td><td>{esc(r[6])}</td><td class='note'>{esc(r[7])}</td></tr>" for r in defects) + '</table></details>' if defects else ''}
+{'<details class="sec" id="sec-defect"><summary>🛠️ 缺失改善追蹤（未完成）' + (f'<span style="font-weight:400;color:#555;margin-left:8px">含🔍會勘 {sum(1 for r in defects if is_sv(r))} 項</span>' if any(is_sv(r) for r in defects) else '') + '<span class="cnt">' + str(len(defects)) + '</span></summary><table><tr><th>發現日</th><th>缺失內容</th><th>位置</th><th>責任廠商</th><th>改善方式</th><th>狀態</th><th>備註</th></tr>' + ''.join(f"<tr><td>{esc(r[0])}</td><td>{SV_TAG if is_sv(r) else ''}{esc(r[1])}{ebtn('缺失改善', r.rn, r[1], r[1], r)}</td><td>{esc(r[2])}</td><td><b>{esc(r[3])}</b></td><td class='note'>{esc(r[4])}</td><td>{esc(r[6])}</td><td class='note'>{esc(r[7])}</td></tr>" for r in defects) + '</table></details>' if defects else ''}
 <div class="zone">行政</div>
 {'<details class="sec"><summary>🏛️ 送審與變更（審核單位，時程可能拖）<span class="cnt">' + str(len(submissions)) + '</span></summary><table><tr><th>事項</th><th>受理/審核單位</th><th>送件日</th><th>預計核准</th><th>實際核准</th><th>備註</th></tr>' + ''.join(f"<tr><td><b>{esc(s[0])}</b>{ebtn('送審變更', s.rn, s[0], s[0], s)}</td><td>{esc(s[1])}</td><td>{esc(s[2]) or '—'}</td><td>{esc(s[3]) or '—'}</td><td>{esc(s[4]) or '—'}</td><td class='note'>{esc(s[6])}</td></tr>" for s in submissions) + '</table></details>' if submissions else ''}
 {'<details class="sec"><summary>📑 使照檢附盤點（建照附款）<span class="cnt">' + str(len(rows_of("使照檢附", 5))) + '</span></summary><table><tr><th>檢附項目</th><th>附款</th><th>主辦</th><th>目前狀態</th><th>備註</th></tr>' + ''.join(f"<tr style=background:{'#e8f6ee' if re.search('已取得|已交|已完成|結案|✓', r[3]) else '#fbe3e0'}><td><b>{esc(r[0])}</b>{ebtn('使照檢附', r.rn, r[0], r[0], r)}</td><td>{esc(r[1])}</td><td>{esc(r[2])}</td><td>{esc(r[3])}</td><td class='note'>{esc(r[4])}</td></tr>" for r in rows_of("使照檢附", 5)) + '</table></details>' if "使照檢附" in wb.sheetnames else ''}
