@@ -2016,6 +2016,50 @@ async function sendToCompany() {
   }
 }
 
+
+// ══ Word 上傳公司雲端（2026-11-12）══
+// 存到公司 Drive「會勘紀錄」資料夾（drivehighhand4），權限＝知道連結者可編輯；Drive 可直接用 Google 文件編輯 .docx。
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1]);
+    fr.onerror = () => rej(new Error('讀檔失敗'));
+    fr.readAsDataURL(blob);
+  });
+}
+async function uploadWordToDrive(blob, fname) {
+  const b64 = await blobToBase64(blob);
+  const r = await fetch(REPORT_API, { method: 'POST',
+    body: JSON.stringify({ key: '93h', type: 'save_survey_doc', name: fname, b64 }) });
+  const t = await r.text();
+  let j; try { j = JSON.parse(t); } catch (e) { throw new Error('雲端回應異常'); }
+  if (!j.ok || !j.url) throw new Error(j.err || '雲端未回傳連結');
+  return j.url;
+}
+function showDocLink(url, fname) {
+  let box = document.getElementById('docLinkBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'docLinkBox';
+    box.style.cssText = 'margin:10px 0;padding:10px 12px;border:1px solid #2e86c1;border-radius:8px;background:#eaf2fb;font-size:.9em;line-height:1.6;word-break:break-all';
+    const anchor = document.getElementById('sendStatus') || document.getElementById('btnWord');
+    anchor.parentNode.insertBefore(box, anchor.nextSibling);
+  }
+  const canShare = !!navigator.share;
+  box.innerHTML = `<b>☁️ 已存到公司雲端</b>：${fname.replace(/</g, '&lt;')}<br>
+    <a href="${url}" target="_blank" rel="noopener">${url}</a><br>
+    <button type="button" class="btn-rtool primary" onclick="window.open('${url}','_blank')">開啟／編輯</button>
+    <button type="button" class="btn-rtool secondary" id="btnCopyLink">複製連結</button>
+    ${canShare ? '<button type="button" class="btn-rtool secondary" id="btnShareLink">分享（LINE…）</button>' : ''}`;
+  document.getElementById('btnCopyLink').onclick = () => {
+    const done = () => showToast('已複製連結');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => prompt('請長按複製', url));
+    else prompt('請長按複製', url);
+  };
+  if (canShare) document.getElementById('btnShareLink').onclick = () =>
+    navigator.share({ title: fname, text: fname + '\n', url }).catch(() => {});
+}
+
 async function exportWord() {
   const btn = document.getElementById('btnWord');
   btn.textContent = '⏳ 產生中…';
@@ -2031,8 +2075,19 @@ async function exportWord() {
     const docXml = buildDocx(session.items, session, images);
     const blob = buildDocxBlob(docXml, images);
     const fname = makeReportFilename('docx');
-    downloadBlob(blob, fname);
-    showToast('✅ Word 檔已開始下載，可直接交付或編輯');
+    // 2026-11-12：手機（工地現場）不下載，直接上傳公司雲端會勘資料夾給連結；電腦照樣下載＋給連結
+    const isPhone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (!isPhone) downloadBlob(blob, fname);
+    btn.textContent = '⏳ 上傳雲端…';
+    try {
+      const link = await uploadWordToDrive(blob, fname);
+      showDocLink(link, fname);
+      showToast('✅ Word 已存到公司雲端，可開啟編輯或分享連結');
+    } catch (e2) {
+      console.error(e2);
+      if (isPhone) downloadBlob(blob, fname);
+      showToast('⚠️ 雲端上傳失敗' + (isPhone ? '，已改為下載檔案' : '（檔案已下載）') + '：' + e2.message);
+    }
   } catch(e) {
     console.error(e);
     showToast('❌ 產生失敗：' + e.message);
