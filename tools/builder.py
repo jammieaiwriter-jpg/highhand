@@ -1350,11 +1350,47 @@ for i in range(0, 8):
            for r in dispatch_all if parse_date(r[0]) == d]
     if _pi:
         plan_days.append({"date": d.isoformat(), "roc": minguo(d), "items": _pi})
+# ---- 2026-11-12（玲嬅定）：給 Grok bot 的兩類核對 ----
+# today ＝第一類：工地已確認（前晚明日派工／晚報答明天／續做中）→ 收到早報即時比對「應到沒到」
+# remind＝第二類：會議／柏銘表／里程碑／行政時程排定、工地可能忘了 → 晨報提前提醒工地 call 工班
+#        提前天數：工班／工項／行政 3 天、里程碑 7 天；每天重複，直到工地確認（轉第一類）或日期過（轉儀表板逾期）
+SITE_SRC = re.compile(r"TG轉送|日誌|出工數|派工|早報|晚報|報工|回報頁|bot")
+LEAD_CREW, LEAD_MS = 3, 7
+plan_today = [{"vendor": r[1], "work": r[2], "source": r[3], "actual": r[4], "note": r[5],
+               "site_confirmed": bool(SITE_SRC.search(str(r[3])))}
+              for r in dispatch_all if parse_date(r[0]) == TODAY]
+plan_remind = []
+
+
+def _rm(d, kind, who, what, src, note=""):
+    plan_remind.append({"date": d.isoformat(), "roc": minguo(d), "days_left": (d - TODAY).days,
+                        "kind": kind, "who": who, "what": what, "source": src, "note": str(note)[:120]})
+
+
+for r in dispatch_all:   # 出工預核：非工地來源、實際空白、0~3 天內（今天到期且工地未確認＝最危險）
+    d = parse_date(r[0])
+    if d and 0 <= (d - TODAY).days <= LEAD_CREW and not str(r[4]).strip() and not SITE_SRC.search(str(r[3])):
+        _rm(d, "出工(工地未確認)", r[1], r[2], r[3], r[5])
+for i in open_items:     # 四表／發包等工項期限 0~3 天內
+    if i["due"] and 0 <= (i["due"] - TODAY).days <= LEAD_CREW:
+        _rm(i["due"], "工項期限", i["loc"] or i["cat"], i["name"], i["cat"], i["status"])
+for r in admin_upcoming:  # 行政時程 0~3 天內、未完成
+    d = parse_date(r[0])
+    if d and 0 <= (d - TODAY).days <= LEAD_CREW and not str(r[4]).strip():
+        _rm(d, "行政", r[1], r[2], r[3], r[5])
+for _n, _d, _nt in MILESTONES:  # 里程碑 0~7 天內、未完成
+    if _n not in MILESTONES_DONE and 0 <= (_d - TODAY).days <= LEAD_MS:
+        _rm(_d, "里程碑", "", _n, "里程碑", _nt)
+plan_remind.sort(key=lambda x: (x["days_left"], x["kind"] != "里程碑"))
+
 _plan_dir = os.environ.get("PLAN_DIR") or os.path.join(BASE, "highhand_repo", "93h", "report")
 PLAN_PATH = os.path.join(_plan_dir, "plan.json")
 if os.path.isdir(os.path.dirname(PLAN_PATH)):
     with open(PLAN_PATH, "w", encoding="utf-8") as f:
-        json.dump({"generated": TODAY.isoformat(), "days": plan_days}, f, ensure_ascii=False, indent=1)
+        json.dump({"generated": TODAY.isoformat(),
+                   "today": plan_today, "remind": plan_remind,
+                   "rule": f"today=工地已確認今日應到(收到早報即比對)；remind=預排未確認,工班/工項/行政提前{LEAD_CREW}天、里程碑提前{LEAD_MS}天提醒",
+                   "days": plan_days}, f, ensure_ascii=False, indent=1)
     print(f"OK -> {PLAN_PATH}")
 print(f"統計：逾期{len(overdue)} 兩週內{len(soon)} 可施作{len(ready)} 施作中{len(doing)} 使照前未完{len(permit_open)} "
       f"排程{len(later)} 等前置{len(waiting)} 完成{done_cnt}/{len(items)}｜"
